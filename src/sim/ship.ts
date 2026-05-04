@@ -97,7 +97,4 @@ export function updateShipKinematics(ship: ShipState, ocean: OceanState, dt: num
   // --- Forward motion ---
   ship.xFt += Math.cos(ship.headingRad) * ship.speedFtPerSec * dt;
   ship.yFt += Math.sin(ship.headingRad) * ship.speedFtPerSec * dt;
-
-  ship.xFt = Math.max(-HALF_WORLD_FT, Math.min(HALF_WORLD_FT, ship.xFt));
-  ship.yFt = Math.max(-HALF_WORLD_FT, Math.min(HALF_WORLD_FT, ship.yFt));
 }

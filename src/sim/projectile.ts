@@ -10,13 +10,7 @@ export function updateProjectiles(game: GameState, dt: number): void {
     projectile.yFt += projectile.vyFtPerSec * dt;
     projectile.lifeSec += dt;
 
-    const inBounds =
-      projectile.xFt >= -HALF_WORLD_FT &&
-      projectile.xFt <= HALF_WORLD_FT &&
-      projectile.yFt >= -HALF_WORLD_FT &&
-      projectile.yFt <= HALF_WORLD_FT;
-
-    if (!inBounds || projectile.lifeSec > projectile.maxLifeSec) {
+    if (projectile.lifeSec > projectile.maxLifeSec) {
       continue;
     }
 
