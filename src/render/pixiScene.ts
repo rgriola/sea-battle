@@ -1,4 +1,4 @@
-// Last touched by agent: 2026-05-04T23:15:00Z
+// Last touched by agent: 2026-05-04T23:45:00Z
 // Purpose: Pixi scene — ship rendering, effects, and camera zoom/centering controls.
 import { Application, Color, Graphics, Text } from "pixi.js";
 import { FEET_TO_PX, HALF_WORLD_FT, VIEW_SIZE_PX, WORLD_SIZE_FT } from "../config/world";
@@ -445,7 +445,11 @@ function drawMiniMap(g: Graphics, game: GameState, camera: CameraState, mapX: nu
 
   let worldHalfFt = 1000;
   if (game.mapType === "nyc-harbor") {
-    worldHalfFt = 15000; // ~2.5nm radius, keeps both spawns in view
+    const bounds = getMap(game.mapType).bounds;
+    const halfWidthFt = bounds.widthNm * 6080 * 0.5;
+    const halfHeightFt = bounds.heightNm * 6080 * 0.5;
+    // Add slight padding so coastlines don't clip against minimap frame.
+    worldHalfFt = Math.max(halfWidthFt, halfHeightFt) * 1.1;
   }
 
   const scale = MINIMAP_SIZE / (worldHalfFt * 2);
