@@ -36,6 +36,7 @@ export function createShip(id: number, shipClass: ShipClass, team: Team, xFt: nu
     reloadStarboard: new Array(b.cannonCountPerSide).fill(0),
     gunPortDestroyed: new Array(b.cannonCountPerSide).fill(false),
     gunStarboardDestroyed: new Array(b.cannonCountPerSide).fill(false),
+    cannonHitsTaken: 0,
     sunk: false,
     tackSide: "port",
     tackTimer: 0,

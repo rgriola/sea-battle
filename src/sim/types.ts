@@ -34,6 +34,7 @@ export type ShipState = {
   reloadStarboard: number[];
   gunPortDestroyed: boolean[];
   gunStarboardDestroyed: boolean[];
+  cannonHitsTaken: number;
   sunk: boolean;
   tackSide: "port" | "starboard";
   tackTimer: number;

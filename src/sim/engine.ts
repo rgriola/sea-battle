@@ -179,9 +179,13 @@ export type GunInfo = { ready: boolean; destroyed: boolean };
 
 export function getPlayerHud(game: GameState): {
   hull: number;
+  maxHull: number;
   sails: number;
+  maxSails: number;
   crew: number;
+  maxCrew: number;
   rudder: number;
+  maxRudder: number;
   headingDeg: number;
   rudderDeg: number;
   sailTrim: number;
@@ -198,9 +202,13 @@ export function getPlayerHud(game: GameState): {
   if (!player) {
     return {
       hull: 0,
+      maxHull: 0,
       sails: 0,
+      maxSails: 0,
       crew: 0,
+      maxCrew: 0,
       rudder: 0,
+      maxRudder: 0,
       headingDeg: 0,
       rudderDeg: 0,
       sailTrim: 0,
@@ -229,10 +237,14 @@ export function getPlayerHud(game: GameState): {
   };
 
   return {
-    hull: Math.round((player.hullHp / player.maxHullHp) * 100),
-    sails: Math.round((player.sailsHp / player.maxSailsHp) * 100),
-    crew: Math.round((player.crew / player.maxCrew) * 100),
-    rudder: Math.round((player.rudderHp / player.maxRudderHp) * 100),
+    hull: Math.round(player.hullHp),
+    maxHull: Math.round(player.maxHullHp),
+    sails: Math.round(player.sailsHp),
+    maxSails: Math.round(player.maxSailsHp),
+    crew: Math.round(player.crew),
+    maxCrew: Math.round(player.maxCrew),
+    rudder: Math.round(player.rudderHp),
+    maxRudder: Math.round(player.maxRudderHp),
     // Convert math angle (0 = East) to nautical compass bearing (0 = North, 90 = East)
     headingDeg: Math.round(((90 - (player.headingRad * 180) / Math.PI) % 360 + 360) % 360),
     rudderDeg: player.rudderAngleDeg,

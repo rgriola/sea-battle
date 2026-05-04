@@ -1,8 +1,8 @@
-// Last touched by agent: 2026-05-04T19:05:00Z
+// Last touched by agent: 2026-05-04T19:35:00Z
 // Purpose: Pixi scene — ship rendering, effects, and camera zoom/centering controls.
 import { Application, Color, Graphics, Text } from "pixi.js";
 import { FEET_TO_PX, HALF_WORLD_FT, VIEW_SIZE_PX, WORLD_SIZE_FT } from "../config/world";
-import { SHIP_BALANCE } from "../config/balance";
+import { SHIP_BALANCE, type ShipClass } from "../config/balance";
 import { getMap } from "../config/maps";
 import { latLonToFt } from "../sim/coordinates";
 import { createControls } from "../input/controls";
@@ -619,29 +619,52 @@ function drawSailsForShip(
   const mastColor = 0x3a2f24;
   const sailColor = ship.team === "player" ? 0xe6dcc6 : 0xd8cfbc;
 
-  const mastPositions = [-ship.lengthFt * 0.2, ship.lengthFt * 0.02, ship.lengthFt * 0.25];
-  const mastHeights = [ship.lengthFt * 0.18, ship.lengthFt * 0.22, ship.lengthFt * 0.16];
+  const rigByClass: Record<ShipClass, { mastPositions: number[]; mastHeights: number[]; sailSpan: number[] }> = {
+    sloop: {
+      mastPositions: [ship.lengthFt * 0.04],
+      mastHeights: [ship.lengthFt * 0.27],
+      sailSpan: [0.78],
+    },
+    schooner: {
+      mastPositions: [-ship.lengthFt * 0.1, ship.lengthFt * 0.18],
+      mastHeights: [ship.lengthFt * 0.24, ship.lengthFt * 0.27],
+      sailSpan: [0.66, 0.72],
+    },
+    brigantine: {
+      mastPositions: [-ship.lengthFt * 0.14, ship.lengthFt * 0.14],
+      mastHeights: [ship.lengthFt * 0.22, ship.lengthFt * 0.25],
+      sailSpan: [0.78, 0.64],
+    },
+    galleon: {
+      mastPositions: [-ship.lengthFt * 0.2, ship.lengthFt * 0.02, ship.lengthFt * 0.24],
+      mastHeights: [ship.lengthFt * 0.2, ship.lengthFt * 0.25, ship.lengthFt * 0.22],
+      sailSpan: [0.86, 0.84, 0.7],
+    },
+  };
+  const rig = rigByClass[ship.shipClass];
 
-  for (let i = 0; i < mastPositions.length; i += 1) {
-    const mx = mastPositions[i];
+  for (let i = 0; i < rig.mastPositions.length; i += 1) {
+    const mx = rig.mastPositions[i];
     const mastBase = shipToWorld(ship, mx, 0);
     const mastTop = shipToWorld(ship, mx, 0.0001);
     const baseS = toScreen(camera, mastBase.xFt, mastBase.yFt);
-    const topS = toScreen(camera, mastTop.xFt, mastTop.yFt - mastHeights[i]);
+    const mastHeight = rig.mastHeights[i];
+    const span = rig.sailSpan[i];
+    const topS = toScreen(camera, mastTop.xFt, mastTop.yFt - mastHeight);
 
     g.moveTo(baseS.x, baseS.y);
     g.lineTo(topS.x, topS.y);
     g.stroke({ color: mastColor, width: Math.max(1.2, 1.6 * camera.zoom), alpha: 0.9 });
 
-    const sailTop = { x: topS.x, y: topS.y + mastHeights[i] * 0.22 };
-    const sailBottom = { x: topS.x, y: topS.y + mastHeights[i] * 0.7 };
+    const sailTop = { x: topS.x, y: topS.y + mastHeight * 0.22 };
+    const sailBottom = { x: topS.x, y: topS.y + mastHeight * 0.7 };
     const sailLeft = {
-      x: topS.x - ship.beamFt * FEET_TO_PX * camera.zoom * (0.62 + billow),
-      y: topS.y + mastHeights[i] * 0.47,
+      x: topS.x - ship.beamFt * FEET_TO_PX * camera.zoom * (span + billow),
+      y: topS.y + mastHeight * 0.47,
     };
     const sailRight = {
-      x: topS.x + ship.beamFt * FEET_TO_PX * camera.zoom * (0.62 - billow),
-      y: topS.y + mastHeights[i] * 0.47,
+      x: topS.x + ship.beamFt * FEET_TO_PX * camera.zoom * (span - billow),
+      y: topS.y + mastHeight * 0.47,
     };
 
     g.poly([
@@ -654,6 +677,17 @@ function drawSailsForShip(
       sailLeft.x,
       sailLeft.y,
     ]).fill({ color: sailColor, alpha: 0.72 });
+  }
+
+  // Add a fore-jib only on the fore-and-aft rigs so classes read differently at a glance.
+  if (ship.shipClass === "sloop" || ship.shipClass === "schooner") {
+    const bow = shipToWorld(ship, ship.lengthFt * 0.44, 0);
+    const jibTop = shipToWorld(ship, ship.lengthFt * 0.18, ship.beamFt * 0.02);
+    const jibAft = shipToWorld(ship, ship.lengthFt * 0.07, -ship.beamFt * 0.42 * (1 + billow));
+    const b1 = toScreen(camera, bow.xFt, bow.yFt);
+    const b2 = toScreen(camera, jibTop.xFt, jibTop.yFt - ship.lengthFt * 0.09);
+    const b3 = toScreen(camera, jibAft.xFt, jibAft.yFt);
+    g.poly([b1.x, b1.y, b2.x, b2.y, b3.x, b3.y]).fill({ color: sailColor, alpha: 0.6 });
   }
 }
 
@@ -805,8 +839,10 @@ function drawShips(
     g.stroke({ color: "#1e1e1e", width: Math.max(1.5, camera.zoom * 1.6) });
 
     const cannonColor = ship.team === "player" ? "#1f3a4a" : "#4a1f1f";
-    for (let i = 0; i < 3; i += 1) {
-      const along = -ship.lengthFt * 0.24 + i * (ship.lengthFt * 0.24);
+    const cannonCount = Math.max(1, ship.reloadPort.length);
+    for (let i = 0; i < cannonCount; i += 1) {
+      const t = cannonCount === 1 ? 0.5 : i / (cannonCount - 1);
+      const along = -ship.lengthFt * 0.26 + t * (ship.lengthFt * 0.5);
       const port = shipToWorld(ship, along, beamFtHalf * 0.87);
       const starboard = shipToWorld(ship, along, -beamFtHalf * 0.87);
       const portS = toScreen(camera, port.xFt, port.yFt);
@@ -1393,7 +1429,7 @@ export function mountPixiScene(
       const stbdIcons = hud.starboardGuns.map(gunIcon).join(" ");
       const rudderLabel = hud.rudderDeg === 0 ? `0\u00b0 (Center)` : hud.rudderDeg > 0 ? `${hud.rudderDeg}\u00b0 Stbd` : `${Math.abs(hud.rudderDeg)}\u00b0 Port`;
       hudEl.innerHTML = [
-        `<div class="hud-section"><div class="hud-title">Ship Status</div><div class="hud-row">Hull: ${hud.hull}%</div><div class="hud-row">Sails: ${hud.sails}%</div><div class="hud-row">Rudder: ${hud.rudder}%</div><div class="hud-row">Crew: ${hud.crew}%</div><div class="hud-row">Enemies Afloat: ${hud.enemiesAfloat}</div></div>`,
+        `<div class="hud-section"><div class="hud-title">Ship Status</div><div class="hud-row">Hull: ${hud.hull} / ${hud.maxHull} pts</div><div class="hud-row">Sails: ${hud.sails} / ${hud.maxSails} pts</div><div class="hud-row">Rudder: ${hud.rudder} / ${hud.maxRudder} pts</div><div class="hud-row">Crew: ${hud.crew} / ${hud.maxCrew}</div><div class="hud-row">Enemies Afloat: ${hud.enemiesAfloat}</div></div>`,
         `<div class="hud-section"><div class="hud-title">Gun Status</div><div class="hud-row">Port &nbsp; ${portIcons}</div><div class="hud-row">Stbd &nbsp; ${stbdIcons}</div></div>`,
         `<div class="hud-section"><div class="hud-title">Heading / Speed</div><div class="hud-row hud-row-large">Sail Trim: ${hud.sailTrim}%</div><div class="hud-row hud-row-large">Rudder: ${rudderLabel}</div><div class="hud-row">Heading: ${hud.headingDeg}\u00b0</div><div class="hud-row">Speed: ${hud.speed} ft/s</div></div>`,
       ].join("");

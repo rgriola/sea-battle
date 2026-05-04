@@ -1,4 +1,4 @@
-// Last touched by agent: 2026-05-04T18:00:00Z
+// Last touched by agent: 2026-05-04T19:35:00Z
 import { useEffect, useRef, useState } from "react";
 import { SHIP_BALANCE, type ShipClass } from "./config/balance";
 import { mountPixiScene, type SceneHandle } from "./render/pixiScene";
@@ -207,7 +207,7 @@ export default function App(): JSX.Element {
                           <div className="ship-card-name">{option.label}</div>
                           <div className="ship-card-role">{option.role}</div>
                           <div className="ship-card-specs">
-                            Hull {specs.hullHp} · Spd {specs.maxSpeedFtPerSec.toFixed(0)} ft/s · Turn {specs.turnRateDegPerSec.toFixed(0)}°/s
+                            Hull {specs.hullHp} · Guns {specs.cannonCountPerSide}/side · Spd {specs.maxSpeedFtPerSec.toFixed(0)} ft/s · Turn {specs.turnRateDegPerSec.toFixed(0)}°/s
                           </div>
                         </button>
                       );
