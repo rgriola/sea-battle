@@ -1,6 +1,9 @@
-// Last touched by agent: 2026-05-04T19:43:00Z
+// Last touched by agent: 2026-05-05T00:08:00Z
 // Purpose: Ocean state, wind polar diagram, and tacking geometry helpers.
 import type { OceanState, ShipState } from "./types";
+
+const MIN_WIND_KNOTS = 5;
+const MAX_WIND_KNOTS = 22;
 
 // NO_GO_ZONE_DEG: degrees from dead-upwind within which a ship has no sail power.
 // windDirRad is the direction the wind blows TO (downwind).
@@ -22,7 +25,7 @@ function normalizeRad(angle: number): number {
 }
 
 function windStrengthFromKnots(knots: number): number {
-  return Math.max(0, Math.min(1, (knots - 5) / 5));
+  return Math.max(0, Math.min(1, (knots - MIN_WIND_KNOTS) / (MAX_WIND_KNOTS - MIN_WIND_KNOTS)));
 }
 
 export function updateOcean(ocean: OceanState, dt: number, rngValue: number): void {
@@ -36,6 +39,9 @@ export function updateOcean(ocean: OceanState, dt: number, rngValue: number): vo
   const shiftRad = absDeg * (Math.PI / 180);
 
   ocean.windDirRad = normalizeRad(ocean.initialWindDirRad + shiftSign * shiftRad);
+  const speedDelta = (rngValue - 0.5) * 8;
+  ocean.windSpeedKnots = Math.max(MIN_WIND_KNOTS, Math.min(MAX_WIND_KNOTS, ocean.windSpeedKnots + speedDelta));
+  ocean.windStrength = windStrengthFromKnots(ocean.windSpeedKnots);
   ocean.nextShiftSec += 60;
 }
 

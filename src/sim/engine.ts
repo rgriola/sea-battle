@@ -43,7 +43,7 @@ export function createInitialGame(mapType: MapType = "open-ocean", seed = 42): {
   const rng = createRng(seed);
   const map = getMap(mapType);
   const initialWindDirRad = rng.next() * Math.PI * 2 - Math.PI;
-  const initialWindSpeedKnots = 5 + rng.next() * 5;
+  const initialWindSpeedKnots = 5 + rng.next() * 17;
 
   // Convert map lat/lon spawn points to ft-space
   const playerPos = latLonToFt(map.playerSpawnLat, map.playerSpawnLon, map.bounds.centerLat, map.bounds.centerLon);
@@ -70,7 +70,7 @@ export function createInitialGame(mapType: MapType = "open-ocean", seed = 42): {
       windDirRad: initialWindDirRad,
       initialWindDirRad,
       windSpeedKnots: initialWindSpeedKnots,
-      windStrength: Math.max(0, Math.min(1, (initialWindSpeedKnots - 5) / 5)),
+      windStrength: Math.max(0, Math.min(1, (initialWindSpeedKnots - 5) / 17)),
       timeSec: 0,
       nextShiftSec: 60,
     },
