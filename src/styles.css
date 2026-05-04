@@ -1,0 +1,283 @@
+:root {
+  color: #f3f3e8;
+  background: #103041;
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: none;
+  margin: 0 auto;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.title-panel h1 {
+  margin: 0 0 6px;
+  font-size: 2rem;
+  letter-spacing: 0.02em;
+}
+
+.title-panel p {
+  margin: 0;
+  color: #ccd7d9;
+}
+
+.sim-panel {
+  display: block;
+}
+
+.hud,
+.status {
+  min-height: 32px;
+  padding: 8px 10px;
+  background: rgba(8, 19, 24, 0.68);
+  border: 1px solid #2a4958;
+  border-radius: 8px;
+  font-size: 0.92rem;
+}
+
+.controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-reset,
+.btn-start,
+.btn-camera {
+  padding: 8px 22px;
+  border: 1.5px solid #4a8fa0;
+  border-radius: 8px;
+  background: rgba(13, 36, 48, 0.9);
+  color: #d6eef5;
+  font-size: 0.95rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-reset:hover,
+.btn-start:hover,
+.btn-camera:hover {
+  background: rgba(30, 80, 100, 0.95);
+  border-color: #7cd6ee;
+}
+
+.btn-camera {
+  min-width: 84px;
+}
+
+.viewport {
+  width: 100%;
+  height: calc(100vh - 134px);
+  min-height: 540px;
+  overflow: hidden;
+  position: relative;
+}
+
+.viewport-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.hud-right {
+  position: absolute;
+  background: rgba(8, 19, 24, 0.82);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+  border-color: #3e6e82;
+}
+
+.status-bottom {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  background: transparent;
+  pointer-events: none;
+}
+
+.hud-right {
+  top: 18px;
+  right: 16px;
+  width: 270px;
+  text-align: left;
+  padding: 10px 12px;
+}
+
+.status-hint {
+  font-size: 13px;
+  color: rgba(180, 220, 235, 0.55);
+  letter-spacing: 0.06em;
+}
+
+.status-line {
+  font-size: 20px;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+}
+
+.status-line:last-child {
+  margin-bottom: 0;
+}
+
+.hud-row {
+  white-space: normal;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  margin-bottom: 3px;
+}
+
+.hud-row:last-child {
+  margin-bottom: 0;
+}
+
+.hud-section {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(110, 178, 198, 0.3);
+}
+
+.hud-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.hud-title {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #8fd2e8;
+  margin-bottom: 5px;
+}
+
+.viewport canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Instructions overlay (I key) ──────────────────────────────────────── */
+
+.instructions-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  pointer-events: all;
+  background: rgba(4, 14, 20, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+/* Start screen overlay ───────────────────────────────────────────────── */
+
+.start-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #0e2433 0%, #07121a 100%);
+}
+
+.start-card {
+  max-width: 380px;
+  padding: 32px 36px;
+  background: rgba(8, 20, 28, 0.92);
+  border: 1.5px solid #3d7a90;
+  border-radius: 14px;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.start-card h2 {
+  margin: 0 0 18px;
+  font-size: 1.6rem;
+  letter-spacing: 0.08em;
+  color: #d8c87a;
+}
+
+.start-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  text-align: left;
+  line-height: 2;
+  font-size: 0.95rem;
+}
+
+.start-card kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  background: #1e4056;
+  border: 1px solid #4a8fa0;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: monospace;
+  color: #c8e8f4;
+}
+
+.wind-note {
+  margin: 0 0 20px;
+  font-size: 0.84rem;
+  color: #8bbccc;
+  line-height: 1.55;
+}
+
+.start-card .btn-start {
+  width: 100%;
+  padding: 12px;
+  font-size: 1.05rem;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 1040px) {
+  .app-shell {
+    padding: 10px;
+  }
+
+  .title-panel h1 {
+    font-size: 1.55rem;
+  }
+
+  .hud,
+  .status {
+    font-size: 0.86rem;
+  }
+
+  .controls-bar {
+    flex-wrap: wrap;
+  }
+
+  .viewport {
+    height: calc(100vh - 180px);
+    min-height: 460px;
+  }
+
+  .viewport-overlay {
+    inset: 0;
+  }
+
+  .hud-right {
+    top: 18px;
+    right: 10px;
+    width: min(52vw, 290px);
+  }
+}
