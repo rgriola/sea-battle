@@ -1,4 +1,4 @@
-// Last touched by agent: 2026-05-04T23:45:00Z
+// Last touched by agent: 2026-05-04T23:55:00Z
 // Purpose: Map definitions with lat/lon bounds, coastlines, and metadata
 
 export type MapType = "open-ocean" | "nyc-harbor";
@@ -80,6 +80,22 @@ export const MAP_NYC_HARBOR: MapDefinition = {
         { lat: 40.719, lon: -73.998 },
         { lat: 40.724, lon: -74.004 },
         { lat: 40.725, lon: -74.012 },
+      ],
+      isLand: true,
+    },
+    // Battery Park fort (Castle Clinton-era footprint)
+    {
+      points: [
+        { lat: 40.7044, lon: -74.0188 },
+        { lat: 40.7048, lon: -74.0180 },
+        { lat: 40.7049, lon: -74.0171 },
+        { lat: 40.7046, lon: -74.0163 },
+        { lat: 40.7040, lon: -74.0158 },
+        { lat: 40.7033, lon: -74.0159 },
+        { lat: 40.7028, lon: -74.0165 },
+        { lat: 40.7026, lon: -74.0173 },
+        { lat: 40.7028, lon: -74.0181 },
+        { lat: 40.7034, lon: -74.0187 },
       ],
       isLand: true,
     },
