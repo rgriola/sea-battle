@@ -210,7 +210,8 @@ export function getPlayerHud(game: GameState): {
     sails: Math.round((player.sailsHp / player.maxSailsHp) * 100),
     crew: Math.round((player.crew / player.maxCrew) * 100),
     rudder: Math.round((player.rudderHp / player.maxRudderHp) * 100),
-    headingDeg: Math.round((((player.headingRad * 180) / Math.PI) % 360 + 360) % 360),
+    // Convert math angle (0 = East) to nautical compass bearing (0 = North, 90 = East)
+    headingDeg: Math.round(((90 - (player.headingRad * 180) / Math.PI) % 360 + 360) % 360),
     rudderDeg: player.rudderAngleDeg,
     sailTrim: player.sailTrim,
     speed: Number(player.speedFtPerSec.toFixed(1)),
