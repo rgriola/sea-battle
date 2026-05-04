@@ -1,6 +1,6 @@
-// Last touched by agent: 2026-05-04T00:00:00Z
+// Last touched by agent: 2026-05-04T19:20:00Z
 // Purpose: Enemy AI with finite-state steering and wind-aware tacking behavior.
-import { CANNON_RANGE_FT, SHIP_BALANCE } from "../config/balance";
+import { CANNON_RANGE_FT, CANNON_SPEED_FT_PER_SEC, SHIP_BALANCE } from "../config/balance";
 import { isHeadingInNoGoZone, tackHeadings } from "./ocean";
 import type { GameState, ShipState } from "./types";
 
@@ -8,6 +8,8 @@ const TACK_DURATION_SEC = 11;
 const EDGE_THRESHOLD_FT = 860;
 const ALLY_AVOID_RADIUS_FT = 190;
 const ALLY_BLOCK_RADIUS_FT = 130;
+const MIN_LEAD_SEC = 0.25;
+const MAX_LEAD_SEC = 2.2;
 
 function normalizeAngle(rad: number): number {
   let value = rad;
@@ -16,9 +18,48 @@ function normalizeAngle(rad: number): number {
   return value;
 }
 
-function signedAngleToTarget(ship: ShipState, target: ShipState): number {
-  const angleToTarget = Math.atan2(target.yFt - ship.yFt, target.xFt - ship.xFt);
+function signedAngleToPoint(ship: ShipState, targetX: number, targetY: number): number {
+  const angleToTarget = Math.atan2(targetY - ship.yFt, targetX - ship.xFt);
   return normalizeAngle(angleToTarget - ship.headingRad);
+}
+
+function shipVelocity(ship: ShipState): { vx: number; vy: number } {
+  return {
+    vx: Math.cos(ship.headingRad) * ship.speedFtPerSec,
+    vy: Math.sin(ship.headingRad) * ship.speedFtPerSec,
+  };
+}
+
+function choosePrimaryTarget(ship: ShipState, ships: ShipState[]): ShipState | null {
+  let bestTarget: ShipState | null = null;
+  let bestDistSq = Number.POSITIVE_INFINITY;
+
+  for (const other of ships) {
+    if (other.sunk || other.team === ship.team) continue;
+    const dx = other.xFt - ship.xFt;
+    const dy = other.yFt - ship.yFt;
+    const distSq = dx * dx + dy * dy;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      bestTarget = other;
+    }
+  }
+
+  return bestTarget;
+}
+
+function predictLeadPoint(shooter: ShipState, target: ShipState): { x: number; y: number; timeSec: number } {
+  const dx = target.xFt - shooter.xFt;
+  const dy = target.yFt - shooter.yFt;
+  const distance = Math.hypot(dx, dy);
+  const targetVel = shipVelocity(target);
+
+  const travelTime = Math.max(MIN_LEAD_SEC, Math.min(MAX_LEAD_SEC, distance / CANNON_SPEED_FT_PER_SEC));
+  return {
+    x: target.xFt + targetVel.vx * travelTime,
+    y: target.yFt + targetVel.vy * travelTime,
+    timeSec: travelTime,
+  };
 }
 
 function steerTowardHeading(ship: ShipState, targetHeading: number): void {
@@ -82,7 +123,7 @@ function computeAllyAvoidance(
   return { rudderBias, throttleScale };
 }
 
-function getRolePlan(ship: ShipState, player: ShipState): {
+function getRolePlan(ship: ShipState, target: ShipState): {
   targetX: number;
   targetY: number;
   preferredRange: number;
@@ -94,8 +135,8 @@ function getRolePlan(ship: ShipState, player: ShipState): {
   if (role === "flanker") {
     const flankSide = ship.tackSide === "port" ? 1 : -1;
     const offset = CANNON_RANGE_FT * 0.32;
-    const targetX = player.xFt + -Math.sin(player.headingRad) * flankSide * offset;
-    const targetY = player.yFt + Math.cos(player.headingRad) * flankSide * offset;
+    const targetX = target.xFt + -Math.sin(target.headingRad) * flankSide * offset;
+    const targetY = target.yFt + Math.cos(target.headingRad) * flankSide * offset;
     return {
       targetX,
       targetY,
@@ -107,8 +148,8 @@ function getRolePlan(ship: ShipState, player: ShipState): {
 
   if (role === "brawler") {
     return {
-      targetX: player.xFt,
-      targetY: player.yFt,
+      targetX: target.xFt,
+      targetY: target.yFt,
       preferredRange: CANNON_RANGE_FT * 0.48,
       throttleNear: 0.7,
       throttleFar: 1,
@@ -117,8 +158,8 @@ function getRolePlan(ship: ShipState, player: ShipState): {
 
   if (role === "cautious") {
     const keepDistance = CANNON_RANGE_FT * 0.96;
-    const retreatX = player.xFt - Math.cos(player.headingRad) * keepDistance;
-    const retreatY = player.yFt - Math.sin(player.headingRad) * keepDistance;
+    const retreatX = target.xFt - Math.cos(target.headingRad) * keepDistance;
+    const retreatY = target.yFt - Math.sin(target.headingRad) * keepDistance;
     return {
       targetX: retreatX,
       targetY: retreatY,
@@ -130,8 +171,8 @@ function getRolePlan(ship: ShipState, player: ShipState): {
 
   // interceptor
   return {
-    targetX: player.xFt,
-    targetY: player.yFt,
+    targetX: target.xFt,
+    targetY: target.yFt,
     preferredRange: CANNON_RANGE_FT * 0.66,
     throttleNear: 0.62,
     throttleFar: 0.92,
@@ -144,22 +185,33 @@ export function runEnemyAi(
 ): { firePort: Set<number>; fireStarboard: Set<number> } {
   const firePort = new Set<number>();
   const fireStarboard = new Set<number>();
-  const player = game.ships.find((ship) => ship.team === "player" && !ship.sunk);
-  if (!player) return { firePort, fireStarboard };
+  const hasAnyOpponents = game.ships.some((ship) => !ship.sunk && ship.team !== "enemy");
+  if (!hasAnyOpponents) return { firePort, fireStarboard };
 
   for (const ship of game.ships) {
     if (ship.team !== "enemy" || ship.sunk) continue;
 
+    const target = choosePrimaryTarget(ship, game.ships);
+    if (!target) continue;
+
     ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: assess`;
 
-    const rolePlan = getRolePlan(ship, player);
+    const lead = predictLeadPoint(ship, target);
+    const rolePlan = getRolePlan(ship, target);
     const dx = rolePlan.targetX - ship.xFt;
     const dy = rolePlan.targetY - ship.yFt;
     const dist = Math.hypot(dx, dy);
-    const angleToPlayer = Math.atan2(player.yFt - ship.yFt, player.xFt - ship.xFt);
+    const angleToTarget = Math.atan2(target.yFt - ship.yFt, target.xFt - ship.xFt);
+    const angleToLead = Math.atan2(lead.y - ship.yFt, lead.x - ship.xFt);
     const desiredHeading = Math.atan2(dy, dx);
     const ready = readyCannons(ship);
-    const preferredBroadside = ready.port >= ready.starboard ? "port" : "starboard";
+    const relLead = normalizeAngle(angleToLead - ship.headingRad);
+    const portBroadsideError = Math.abs(normalizeAngle(relLead - Math.PI / 2));
+    const starboardBroadsideError = Math.abs(normalizeAngle(relLead + Math.PI / 2));
+    let preferredBroadside: "port" | "starboard" =
+      portBroadsideError <= starboardBroadsideError ? "port" : "starboard";
+    if (ready.port > 0 && ready.starboard <= 0) preferredBroadside = "port";
+    if (ready.starboard > 0 && ready.port <= 0) preferredBroadside = "starboard";
     const anyBroadsideReady = ready.port > 0 || ready.starboard > 0;
 
     // ── Edge avoidance overrides everything ──────────────────────────────────
@@ -190,17 +242,24 @@ export function runEnemyAi(
       } else {
         // Tactical steering: set up a broadside when loaded, disengage while reloading.
         ship.tackTimer = 0;
-        const rel = signedAngleToTarget(ship, player);
+        const rel = signedAngleToPoint(ship, target.xFt, target.yFt);
         const absRelDeg = Math.abs(rel) * (180 / Math.PI);
 
         if (anyBroadsideReady) {
-          const setupHeading = broadsideHeading(angleToPlayer, preferredBroadside);
+          const setupHeading = broadsideHeading(angleToLead, preferredBroadside);
           steerTowardHeading(ship, setupHeading);
-          ship.throttle = dist > rolePlan.preferredRange ? rolePlan.throttleFar : Math.max(0.46, rolePlan.throttleNear);
-          ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: set ${preferredBroadside} broadside`;
+          const rangeError = dist - rolePlan.preferredRange;
+          if (rangeError > 140) {
+            ship.throttle = rolePlan.throttleFar;
+          } else if (rangeError < -110) {
+            ship.throttle = Math.max(0.4, rolePlan.throttleNear - 0.12);
+          } else {
+            ship.throttle = Math.max(0.46, (rolePlan.throttleNear + rolePlan.throttleFar) * 0.5);
+          }
+          ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: track t${target.id} ${preferredBroadside}`;
         } else {
           const disengageSign = ship.tackSide === "port" ? 1 : -1;
-          const disengageHeading = angleToPlayer + disengageSign * 2.15;
+          const disengageHeading = angleToTarget + disengageSign * 2.15;
           steerTowardHeading(ship, disengageHeading);
           ship.throttle = Math.min(0.88, rolePlan.throttleFar);
           ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: reload disengage`;
@@ -221,19 +280,32 @@ export function runEnemyAi(
     }
 
     // ── Fire decisions ────────────────────────────────────────────────────────
-    const relToPlayer = signedAngleToTarget(ship, player);
+    const relToLeadPoint = signedAngleToPoint(ship, lead.x, lead.y);
     const role = ship.aiRole ?? "interceptor";
     const fireRange = role === "cautious" ? CANNON_RANGE_FT * 0.88 : CANNON_RANGE_FT;
-    const fireArcInner = role === "cautious" ? 0.95 : 0.7;
-    const fireArcOuter = role === "cautious" ? 2.15 : 2.4;
+    const alignmentTolerance = role === "cautious" ? 0.36 : 0.48;
+    const shooterVel = shipVelocity(ship);
+    const targetVel = shipVelocity(target);
+    const toTargetX = target.xFt - ship.xFt;
+    const toTargetY = target.yFt - ship.yFt;
+    const losNorm = Math.hypot(toTargetX, toTargetY);
+    const losX = losNorm > 1e-5 ? toTargetX / losNorm : 0;
+    const losY = losNorm > 1e-5 ? toTargetY / losNorm : 0;
+    const relVelX = targetVel.vx - shooterVel.vx;
+    const relVelY = targetVel.vy - shooterVel.vy;
+    const closingSpeed = -(relVelX * losX + relVelY * losY);
 
-    if (ready.port > 0 && relToPlayer > fireArcInner && relToPlayer < fireArcOuter && dist < fireRange) {
+    const portAlignment = Math.abs(normalizeAngle(relToLeadPoint - Math.PI / 2));
+    const starboardAlignment = Math.abs(normalizeAngle(relToLeadPoint + Math.PI / 2));
+    const hasShotWindow = dist < fireRange && closingSpeed > -12;
+
+    if (ready.port > 0 && portAlignment <= alignmentTolerance && hasShotWindow) {
       firePort.add(ship.id);
-      ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: fire port`;
+      ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: fire t${target.id} port`;
     }
-    if (ready.starboard > 0 && relToPlayer < -fireArcInner && relToPlayer > -fireArcOuter && dist < fireRange) {
+    if (ready.starboard > 0 && starboardAlignment <= alignmentTolerance && hasShotWindow) {
       fireStarboard.add(ship.id);
-      ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: fire stbd`;
+      ship.aiDebugState = `${ship.aiRole ?? "interceptor"}: fire t${target.id} stbd`;
     }
 
     // ── Crew penalty ─────────────────────────────────────────────────────────
