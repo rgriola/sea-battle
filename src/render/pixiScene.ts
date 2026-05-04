@@ -180,8 +180,8 @@ function toScreen(camera: CameraState, xFt: number, yFt: number): ScreenPoint {
 
 function createCamera(game: GameState): CameraState {
   const player = game.ships.find((ship) => ship.team === "player");
-  // For NYC Harbor, start zoomed out so you can see the harbor coastlines
-  const initialZoom = game.mapType === "nyc-harbor" ? 0.10 : 1.0;
+  // For NYC Harbor, keep context while preserving visible scene motion.
+  const initialZoom = game.mapType === "nyc-harbor" ? 0.18 : 1.0;
   return {
     xFt: player?.xFt ?? 0,
     yFt: player?.yFt ?? 0,
@@ -1047,7 +1047,7 @@ export function mountPixiScene(
       summaryShown = false;
       followPlayer = true;
       const game = sim.getSnapshot();
-      camera.zoom = game.mapType === "nyc-harbor" ? 0.10 : 1.0;
+      camera.zoom = game.mapType === "nyc-harbor" ? 0.18 : 1.0;
       centerCameraOnPlayer(game, camera);
       hudEl.textContent = "";
       statusEl.textContent = "";
@@ -1242,11 +1242,19 @@ export function mountPixiScene(
 
       const player = game.ships.find((ship) => ship.team === "player");
       if (followPlayer && player && !player.sunk) {
-        camera.targetXFt = player.xFt;
-        camera.targetYFt = player.yFt;
+        if (game.mapType === "nyc-harbor") {
+          // Add a forward look-ahead in large maps so movement reads clearly.
+          const leadFt = 260 + player.speedFtPerSec * 7;
+          camera.targetXFt = player.xFt + Math.cos(player.headingRad) * leadFt;
+          camera.targetYFt = player.yFt + Math.sin(player.headingRad) * leadFt;
+        } else {
+          camera.targetXFt = player.xFt;
+          camera.targetYFt = player.yFt;
+        }
       }
 
-      const lerp = clamp(dtRender * 8, 0, 1);
+      const followRate = game.mapType === "nyc-harbor" ? 3.2 : 8;
+      const lerp = clamp(dtRender * followRate, 0, 1);
       camera.xFt += (camera.targetXFt - camera.xFt) * lerp;
       camera.yFt += (camera.targetYFt - camera.yFt) * lerp;
 
