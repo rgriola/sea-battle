@@ -1,5 +1,7 @@
 import { SHIP_BALANCE } from "../config/balance";
 import { SIM_TICK_SECONDS } from "../config/world";
+import { getMap, type MapType } from "../config/maps";
+import { latLonToFt } from "./coordinates";
 import { runEnemyAi } from "./ai";
 import { tickReloads, tryFireBroadside } from "./cannon";
 import { resolveShipCollisions } from "./collision";
@@ -37,17 +39,23 @@ function assignEnemyRoles(game: GameState, rng: Rng): void {
   }
 }
 
-export function createInitialGame(seed = 42): { game: GameState; rng: Rng } {
+export function createInitialGame(mapType: MapType = "open-ocean", seed = 42): { game: GameState; rng: Rng } {
   const rng = createRng(seed);
+  const map = getMap(mapType);
   const initialWindDirRad = rng.next() * Math.PI * 2 - Math.PI;
   const initialWindSpeedKnots = 5 + rng.next() * 5;
+
+  // Convert map lat/lon spawn points to ft-space
+  const playerPos = latLonToFt(map.playerSpawnLat, map.playerSpawnLon, map.bounds.centerLat, map.bounds.centerLon);
+  const enemyPos = latLonToFt(map.enemySpawnLat, map.enemySpawnLon, map.bounds.centerLat, map.bounds.centerLon);
+
   const game: GameState = {
     tick: 0,
     nextProjectileId: 1,
     ships: [
-      createShip(1, "sloop", "player", -300, 0, 0),
-      createShip(2, "brigantine", "enemy", 320, 120, Math.PI),
-      createShip(3, "schooner", "enemy", 250, -200, Math.PI * 0.85),
+      createShip(1, "sloop", "player", playerPos.xFt, playerPos.yFt, 0),
+      createShip(2, "brigantine", "enemy", enemyPos.xFt + 300, enemyPos.yFt + 100, Math.PI),
+      createShip(3, "schooner", "enemy", enemyPos.xFt + 200, enemyPos.yFt - 150, Math.PI * 0.85),
     ],
     projectiles: [],
     ocean: {
@@ -62,6 +70,9 @@ export function createInitialGame(seed = 42): { game: GameState; rng: Rng } {
     firingEvents: [],
     impactEvents: [],
     damageEvents: [],
+    mapType,
+    mapCenterLat: map.bounds.centerLat,
+    mapCenterLon: map.bounds.centerLon,
   };
 
   assignEnemyRoles(game, rng);
@@ -149,7 +160,7 @@ export function tickGame(game: GameState, rng: Rng, input: InputState, dt = SIM_
 }
 
 export function resetGame(): { game: GameState; rng: Rng } {
-  return createInitialGame(42 + Math.floor(Math.random() * 100000));
+  return createInitialGame("open-ocean", 42 + Math.floor(Math.random() * 100000));
 }
 
 export type GunInfo = { ready: boolean; destroyed: boolean };

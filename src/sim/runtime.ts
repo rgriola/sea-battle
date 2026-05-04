@@ -2,6 +2,7 @@
 // Purpose: Simulation runtime boundary — local and remote adapters with authority metadata.
 import { SIM_TICK_SECONDS } from "../config/world";
 import { createInitialGame, tickGame } from "./engine";
+import type { MapType } from "../config/maps";
 import type { Rng } from "./rng";
 import type { DamageEvent, FiringEvent, GameState, ImpactEvent, InputState } from "./types";
 
@@ -98,10 +99,12 @@ export function createSimulationSession(opts?: {
   matchId?: string;
   authority?: SimulationAuthority;
   tickSeconds?: number;
+  mapType?: MapType;
 }): SimulationSession {
   const seed = opts?.seed ?? 42;
   const tickSeconds = opts?.tickSeconds ?? SIM_TICK_SECONDS;
-  const initial = createInitialGame(seed);
+  const mapType = opts?.mapType ?? "open-ocean";
+  const initial = createInitialGame(mapType, seed);
 
   return {
     matchId: opts?.matchId ?? "local-sea-battle",
@@ -114,7 +117,8 @@ export function createSimulationSession(opts?: {
 }
 
 export function resetSimulationSession(session: SimulationSession, seed: number): void {
-  const initial = createInitialGame(seed);
+  const mapType = session.game.mapType;
+  const initial = createInitialGame(mapType, seed);
   session.seed = seed;
   session.game = initial.game;
   session.rng = initial.rng;
@@ -143,6 +147,7 @@ export type AdapterOpts = {
   seed?: number;
   matchId?: string;
   tickSeconds?: number;
+  mapType?: MapType;
 };
 
 export function createLocalSimulationAdapter(opts?: AdapterOpts): SimulationAdapter {

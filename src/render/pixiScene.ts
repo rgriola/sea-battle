@@ -1,8 +1,10 @@
-// Last touched by agent: 2026-05-04T22:00:00Z
+// Last touched by agent: 2026-05-04T23:15:00Z
 // Purpose: Pixi scene — ship rendering, effects, and camera zoom/centering controls.
 import { Application, Color, Graphics, Text } from "pixi.js";
 import { FEET_TO_PX, HALF_WORLD_FT, VIEW_SIZE_PX, WORLD_SIZE_FT } from "../config/world";
 import { SHIP_BALANCE } from "../config/balance";
+import { getMap } from "../config/maps";
+import { latLonToFt } from "../sim/coordinates";
 import { createControls } from "../input/controls";
 import { getPlayerHud } from "../sim/engine";
 import {
@@ -195,6 +197,35 @@ function centerCameraOnPlayer(game: GameState, camera: CameraState): void {
 function waveRng(seed: number): number {
   const s = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
   return s - Math.floor(s);
+}
+
+function drawCoastlines(
+  g: Graphics,
+  game: GameState,
+  camera: CameraState,
+): void {
+  if (game.mapType === "open-ocean") return;
+
+  const map = getMap(game.mapType);
+  if (!map.coastlines.length) return;
+
+  g.clear();
+  for (const polygon of map.coastlines) {
+    if (polygon.isLand) {
+      // Convert lat/lon to ft, then to screen coords
+      const ftPoints = polygon.points.map((pt) => latLonToFt(pt.lat, pt.lon, game.mapCenterLat, game.mapCenterLon));
+      const screenPoints = ftPoints.map((pt) => toScreen(camera, pt.xFt, pt.yFt));
+
+      if (screenPoints.length > 0) {
+        g.moveTo(screenPoints[0].x, screenPoints[0].y);
+        for (let i = 1; i < screenPoints.length; i++) {
+          g.lineTo(screenPoints[i].x, screenPoints[i].y);
+        }
+        g.lineTo(screenPoints[0].x, screenPoints[0].y);
+        g.fill("#1a4d2e");
+      }
+    }
+  }
 }
 
 function drawOcean(g: Graphics, ocean: OceanState, width: number, height: number, zoom: number): void {
@@ -865,6 +896,7 @@ export type MountPixiSceneOpts = {
   authority?: SimulationAuthority;
   seed?: number;
   zoomEl?: HTMLElement;
+  mapType?: import("../config/maps").MapType;
 };
 
 export function mountPixiScene(
@@ -878,6 +910,7 @@ export function mountPixiScene(
   let sim = createSimulationAdapterForMode(opts?.authority ?? "local-client", {
     seed: opts?.seed ?? 64,
     matchId: "local-sea-battle",
+    mapType: opts?.mapType ?? "open-ocean",
   });
   const particles: Particle[] = [];
   const damageLabels: DamageLabel[] = [];
@@ -940,6 +973,7 @@ export function mountPixiScene(
     host.appendChild(app.canvas);
 
     const oceanGfx = new Graphics();
+    const coastlinesGfx = new Graphics();
     const crumbsGfx = new Graphics();
     const shipsGfx = new Graphics();
     const particlesGfx = new Graphics();
@@ -964,6 +998,7 @@ export function mountPixiScene(
     const labelLayer = new Graphics();
     const aiDebugLayer = new Graphics();
     app.stage.addChild(oceanGfx);
+    app.stage.addChild(coastlinesGfx);
     app.stage.addChild(crumbsGfx);
     app.stage.addChild(shipsGfx);
     app.stage.addChild(particlesGfx);
@@ -1128,6 +1163,7 @@ export function mountPixiScene(
       }
 
       drawOcean(oceanGfx, game.ocean, camera.viewWidthPx, camera.viewHeightPx, camera.zoom);
+      drawCoastlines(coastlinesGfx, game, camera);
       drawCrumbs(crumbsGfx, crumbs, game.ocean.timeSec, camera);
       drawShips(shipsGfx, game, camera, rudderDisplayByShipId);
       drawSinkingShips(shipsGfx, sinkingShips, camera);

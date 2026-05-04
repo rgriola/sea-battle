@@ -198,3 +198,9 @@ Sea-Battle/
 ```
 
 If you want, next step is I can scaffold this structure and generate a first playable prototype loop (movement + broadside fire + collisions) with placeholder art.
+
+...
+
+I set up a github repo : https://github.com/rgriola/sea-battle.git. Lets push what we have, create a feature branch to do the refactor.
+
+Set the starting zoom level at 1 move the zoom to its own panel outside the game UI top right. Remove the Zoombuttons in the top right. Ship Heading Panel : Move the Sail Trim to the top and Rudder underneath, increase the font size to 20 for those two parameters. Create a sinking animation for ships, ie remove the X, show the ship slowy going under the water 3-5 sconds, the ship sink under the water, like an opacity with some waves around the spot. Also Add a Victory Won Summary Panel but keep the ships moving until a full reset, the panel should create a summay of the actions each ship took - shots fired, hit rate, final status etc whatever data can be collected. Also can we add bread crumbs to each ships path taken, maybe every 2 seconds they gradually disappear over 1 minute.

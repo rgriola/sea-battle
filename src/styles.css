@@ -255,6 +255,31 @@ body {
   letter-spacing: 0.05em;
 }
 
+.start-card .btn-map-select {
+  width: 100%;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #1a5566 0%, #0f3d4f 100%);
+  border: 1.5px solid #3a6e82;
+  border-radius: 8px;
+  color: #d8f3fb;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.start-card .btn-map-select:hover {
+  background: linear-gradient(135deg, #1f6877 0%, #165a72 100%);
+  border-color: #5a9db5;
+  box-shadow: 0 0 12px rgba(90, 157, 181, 0.3);
+}
+
+.start-card .btn-map-select:active {
+  transform: scale(0.98);
+}
+
 /* Zoom display panel ─────────────────────────────────────────────────── */
 
 .zoom-display {

@@ -1,7 +1,9 @@
-// Last touched by agent: 2026-05-04T22:00:00Z
+// Last touched by agent: 2026-05-04T23:15:00Z
 import { useEffect, useRef, useState } from "react";
 import { mountPixiScene, type SceneHandle } from "./render/pixiScene";
 import type { SimulationAuthority } from "./sim/runtime";
+import type { MapType } from "./config/maps";
+import { ALL_MAPS } from "./config/maps";
 
 function readAuthorityMode(): SimulationAuthority {
   if (typeof window !== "undefined") {
@@ -18,6 +20,7 @@ export default function App(): JSX.Element {
   const zoomRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<SceneHandle | null>(null);
   const [started, setStarted] = useState(false);
+  const [selectedMap, setSelectedMap] = useState<MapType | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
   const authority = readAuthorityMode();
 
@@ -31,14 +34,14 @@ export default function App(): JSX.Element {
   }, [started]);
 
   useEffect(() => {
-    if (!started || !hostRef.current || !hudRef.current || !statusRef.current) return;
-    const scene = mountPixiScene(hostRef.current, hudRef.current, statusRef.current, { authority, zoomEl: zoomRef.current ?? undefined });
+    if (!started || !hostRef.current || !hudRef.current || !statusRef.current || !selectedMap) return;
+    const scene = mountPixiScene(hostRef.current, hudRef.current, statusRef.current, { authority, zoomEl: zoomRef.current ?? undefined, mapType: selectedMap });
     sceneRef.current = scene;
     return () => {
       scene.dispose();
       sceneRef.current = null;
     };
-  }, [started]);
+  }, [started, selectedMap]);
 
   const handleReset = () => {
     sceneRef.current?.reset();
@@ -100,20 +103,57 @@ export default function App(): JSX.Element {
           {!started && (
             <div className="start-overlay">
               <div className="start-card">
-                <h2>Set Sail</h2>
-                <ul>
-                  <li><kbd>W</kbd> / <kbd>S</kbd> — throttle up / down</li>
-                  <li><kbd>A</kbd> / <kbd>D</kbd> — rudder left / right</li>
-                  <li><kbd>Q</kbd> — fire port broadside</li>
-                  <li><kbd>E</kbd> — fire starboard broadside</li>
-                </ul>
-                <p className="wind-note">
-                  The compass (top-right) shows wind direction. The red wedge is the no-go zone.
-                  Sailing into it will stop you dead. Use trackpad/wheel to zoom.
-                </p>
-                <button className="btn-start" onClick={() => setStarted(true)} type="button">
-                  Start Battle
-                </button>
+                {!selectedMap ? (
+                  <>
+                    <h2>Choose Theater</h2>
+                    <p>Select your battle theater:</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                      {ALL_MAPS.map((map) => (
+                        <button
+                          key={map.id}
+                          className="btn-map-select"
+                          onClick={() => setSelectedMap(map.id)}
+                          type="button"
+                        >
+                          <div style={{ fontWeight: 600 }}>{map.label}</div>
+                          <div style={{ fontSize: "0.85rem", color: "#9dd4e8", marginTop: "4px" }}>{map.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h2>Set Sail</h2>
+                    <ul>
+                      <li><kbd>W</kbd> / <kbd>S</kbd> — throttle up / down</li>
+                      <li><kbd>A</kbd> / <kbd>D</kbd> — rudder left / right</li>
+                      <li><kbd>Q</kbd> — fire port broadside</li>
+                      <li><kbd>E</kbd> — fire starboard broadside</li>
+                    </ul>
+                    <p className="wind-note">
+                      The compass (top-right) shows wind direction. The red wedge is the no-go zone.
+                      Sailing into it will stop you dead. Use trackpad/wheel to zoom.
+                    </p>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        className="btn-start"
+                        onClick={() => setSelectedMap(null)}
+                        type="button"
+                        style={{ flex: 1, backgroundColor: "#4a4a4a" }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        className="btn-start"
+                        onClick={() => setStarted(true)}
+                        type="button"
+                        style={{ flex: 1 }}
+                      >
+                        Start Battle
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

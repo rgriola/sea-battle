@@ -1,4 +1,5 @@
 import type { ShipClass } from "../config/balance";
+import type { MapType } from "../config/maps";
 
 export type Team = "player" | "enemy";
 export type Broadside = "port" | "starboard";
@@ -106,4 +107,7 @@ export type GameState = {
   firingEvents: FiringEvent[];
   impactEvents: ImpactEvent[];
   damageEvents: DamageEvent[];
+  mapType: MapType;
+  mapCenterLat: number;
+  mapCenterLon: number;
 };
