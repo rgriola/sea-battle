@@ -180,8 +180,8 @@ function toScreen(camera: CameraState, xFt: number, yFt: number): ScreenPoint {
 
 function createCamera(game: GameState): CameraState {
   const player = game.ships.find((ship) => ship.team === "player");
-  // For NYC Harbor, start zoomed out so you can see the harbor
-  const initialZoom = game.mapType === "nyc-harbor" ? 0.25 : 1.0;
+  // For NYC Harbor, start zoomed out so you can see the harbor coastlines
+  const initialZoom = game.mapType === "nyc-harbor" ? 0.10 : 1.0;
   return {
     xFt: player?.xFt ?? 0,
     yFt: player?.yFt ?? 0,
@@ -445,7 +445,7 @@ function drawMiniMap(g: Graphics, game: GameState, camera: CameraState, mapX: nu
 
   let worldHalfFt = 1000;
   if (game.mapType === "nyc-harbor") {
-    worldHalfFt = 30000; // ~5nm radius, enough to see entire harbor
+    worldHalfFt = 15000; // ~2.5nm radius, keeps both spawns in view
   }
 
   const scale = MINIMAP_SIZE / (worldHalfFt * 2);
@@ -1047,7 +1047,7 @@ export function mountPixiScene(
       summaryShown = false;
       followPlayer = true;
       const game = sim.getSnapshot();
-      camera.zoom = game.mapType === "nyc-harbor" ? 0.25 : 1.0;
+      camera.zoom = game.mapType === "nyc-harbor" ? 0.10 : 1.0;
       centerCameraOnPlayer(game, camera);
       hudEl.textContent = "";
       statusEl.textContent = "";
