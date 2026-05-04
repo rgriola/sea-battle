@@ -173,12 +173,14 @@ function toScreen(camera: CameraState, xFt: number, yFt: number): ScreenPoint {
 
 function createCamera(game: GameState): CameraState {
   const player = game.ships.find((ship) => ship.team === "player");
+  // For NYC Harbor, start zoomed out so you can see the harbor
+  const initialZoom = game.mapType === "nyc-harbor" ? 0.25 : 1.0;
   return {
     xFt: player?.xFt ?? 0,
     yFt: player?.yFt ?? 0,
     targetXFt: player?.xFt ?? 0,
     targetYFt: player?.yFt ?? 0,
-    zoom: 1.0,
+    zoom: initialZoom,
     viewWidthPx: VIEW_SIZE_PX,
     viewHeightPx: VIEW_SIZE_PX,
   };
@@ -211,18 +213,21 @@ function drawCoastlines(
 
   g.clear();
   for (const polygon of map.coastlines) {
-    if (polygon.isLand) {
+    if (polygon.isLand && polygon.points.length > 0) {
       // Convert lat/lon to ft, then to screen coords
       const ftPoints = polygon.points.map((pt) => latLonToFt(pt.lat, pt.lon, game.mapCenterLat, game.mapCenterLon));
       const screenPoints = ftPoints.map((pt) => toScreen(camera, pt.xFt, pt.yFt));
 
       if (screenPoints.length > 0) {
+        g.beginFill(0x1a4d2e);
         g.moveTo(screenPoints[0].x, screenPoints[0].y);
         for (let i = 1; i < screenPoints.length; i++) {
           g.lineTo(screenPoints[i].x, screenPoints[i].y);
         }
         g.lineTo(screenPoints[0].x, screenPoints[0].y);
-        g.fill("#1a4d2e");
+        g.endFill();
+        // Add a subtle stroke for definition
+        g.stroke({ color: 0x0d5a35, width: 1.5 });
       }
     }
   }
@@ -946,8 +951,9 @@ export function mountPixiScene(
       matchStats = initMatchStats(sim.getSnapshot());
       summaryShown = false;
       followPlayer = true;
-      camera.zoom = 1.0;
-      centerCameraOnPlayer(sim.getSnapshot(), camera);
+      const game = sim.getSnapshot();
+      camera.zoom = game.mapType === "nyc-harbor" ? 0.25 : 1.0;
+      centerCameraOnPlayer(game, camera);
       hudEl.textContent = "";
       statusEl.textContent = "";
     },
