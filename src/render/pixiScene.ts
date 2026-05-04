@@ -153,6 +153,13 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function getZoomLimits(mapType: string): { min: number; max: number } {
+  if (mapType === "nyc-harbor") {
+    return { min: 0.1, max: 3.2 };
+  }
+  return { min: 0.45, max: 3.2 };
+}
+
 function windStrengthFromKnots(knots: number): number {
   return clamp((knots - 5) / 5, 0, 1);
 }
@@ -230,6 +237,70 @@ function drawCoastlines(
         g.stroke({ color: 0x0d5a35, width: 1.5 });
       }
     }
+  }
+}
+
+function drawDirectionMarkers(g: Graphics, game: GameState, camera: CameraState): void {
+  g.clear();
+  const viewW = camera.viewWidthPx;
+  const viewH = camera.viewHeightPx;
+  const margin = 46; // px from screen edge where indicators sit
+  const safeRadius = Math.min(viewW, viewH) * 0.5 - margin;
+
+  type Target = { xFt: number; yFt: number; color: number };
+  const targets: Target[] = [];
+
+  // Enemy ships (red markers)
+  for (const ship of game.ships) {
+    if (ship.team === "player" || ship.sunk) continue;
+    targets.push({ xFt: ship.xFt, yFt: ship.yFt, color: 0xe05540 });
+  }
+
+  // City landmarks for NYC Harbor (green markers)
+  if (game.mapType === "nyc-harbor") {
+    const landmarks = [
+      { label: "Manhattan", lat: 40.785, lon: -73.968 },
+      { label: "Battery",   lat: 40.700, lon: -74.016 },
+      { label: "Brooklyn",  lat: 40.680, lon: -73.945 },
+    ];
+    for (const lm of landmarks) {
+      // Convert to ft relative to map center
+      const dlat = lm.lat - game.mapCenterLat;
+      const dlon = lm.lon - game.mapCenterLon;
+      const cosLat = Math.cos((game.mapCenterLat * Math.PI) / 180);
+      const xFt = dlon * 6080 * 60 * cosLat;
+      const yFt = dlat * 6080 * 60;
+      targets.push({ xFt, yFt, color: 0x44cc88 });
+    }
+  }
+
+  for (const target of targets) {
+    const screen = toScreen(camera, target.xFt, target.yFt);
+    const onScreen =
+      screen.x >= -margin && screen.x <= viewW + margin &&
+      screen.y >= -margin && screen.y <= viewH + margin;
+    if (onScreen) continue;
+
+    const angle = Math.atan2(screen.y - viewH * 0.5, screen.x - viewW * 0.5);
+    const ex = viewW * 0.5 + Math.cos(angle) * safeRadius;
+    const ey = viewH * 0.5 + Math.sin(angle) * safeRadius;
+
+    // Glow ring
+    g.circle(ex, ey, 11).fill({ color: target.color, alpha: 0.18 });
+    // Solid dot
+    g.circle(ex, ey, 7).fill({ color: target.color, alpha: 0.88 });
+    // Chevron pointing inward
+    const chevLen = 10;
+    const cx1 = ex + Math.cos(angle + 2.4) * chevLen;
+    const cy1 = ey + Math.sin(angle + 2.4) * chevLen;
+    const cx2 = ex + Math.cos(angle - 2.4) * chevLen;
+    const cy2 = ey + Math.sin(angle - 2.4) * chevLen;
+    const tipX = ex + Math.cos(angle) * 14;
+    const tipY = ey + Math.sin(angle) * 14;
+    g.moveTo(cx1, cy1);
+    g.lineTo(tipX, tipY);
+    g.lineTo(cx2, cy2);
+    g.stroke({ color: target.color, width: 2, alpha: 0.7 });
   }
 }
 
@@ -372,7 +443,11 @@ function drawWindCompass(g: Graphics, ocean: OceanState, viewWidth: number): voi
 function drawMiniMap(g: Graphics, game: GameState, camera: CameraState, mapX: number, mapY: number): void {
   g.clear();
 
-  const worldHalfFt = 1000;
+  let worldHalfFt = 1000;
+  if (game.mapType === "nyc-harbor") {
+    worldHalfFt = 30000; // ~5nm radius, enough to see entire harbor
+  }
+
   const scale = MINIMAP_SIZE / (worldHalfFt * 2);
 
   const mapPoint = (xFt: number, yFt: number): ScreenPoint => ({
@@ -382,6 +457,26 @@ function drawMiniMap(g: Graphics, game: GameState, camera: CameraState, mapX: nu
 
   g.roundRect(mapX, mapY, MINIMAP_SIZE, MINIMAP_SIZE, 10).fill({ color: 0x0d2430, alpha: 0.82 });
   g.roundRect(mapX, mapY, MINIMAP_SIZE, MINIMAP_SIZE, 10).stroke({ color: 0x4a8fa0, width: 1.2, alpha: 0.9 });
+  // Draw coastlines on minimap
+  if (game.mapType === "nyc-harbor") {
+    const map = getMap(game.mapType);
+    for (const polygon of map.coastlines) {
+      if (polygon.isLand && polygon.points.length > 0) {
+        const ftPoints = polygon.points.map((pt) => latLonToFt(pt.lat, pt.lon, game.mapCenterLat, game.mapCenterLon));
+        const screenPoints = ftPoints.map((pt) => mapPoint(pt.xFt, pt.yFt));
+        if (screenPoints.length > 0) {
+          g.beginFill(0x1a4d2e, 0.6);
+          g.moveTo(screenPoints[0].x, screenPoints[0].y);
+          for (let i = 1; i < screenPoints.length; i++) {
+            g.lineTo(screenPoints[i].x, screenPoints[i].y);
+          }
+          g.lineTo(screenPoints[0].x, screenPoints[0].y);
+          g.endFill();
+        }
+      }
+    }
+  }
+
 
   g.moveTo(mapX + MINIMAP_SIZE * 0.5, mapY + 8);
   g.lineTo(mapX + MINIMAP_SIZE * 0.5, mapY + MINIMAP_SIZE - 8);
@@ -962,10 +1057,12 @@ export function mountPixiScene(
       centerCameraOnPlayer(sim.getSnapshot(), camera);
     },
     zoomIn: () => {
-      camera.zoom = clamp(camera.zoom * 1.15, 0.45, 3.2);
+      const limits = getZoomLimits(sim.getSnapshot().mapType);
+      camera.zoom = clamp(camera.zoom * 1.15, limits.min, limits.max);
     },
     zoomOut: () => {
-      camera.zoom = clamp(camera.zoom / 1.15, 0.45, 3.2);
+      const limits = getZoomLimits(sim.getSnapshot().mapType);
+      camera.zoom = clamp(camera.zoom / 1.15, limits.min, limits.max);
     },
   };
 
@@ -1010,6 +1107,8 @@ export function mountPixiScene(
     app.stage.addChild(particlesGfx);
     app.stage.addChild(minimapGfx);
     app.stage.addChild(compassGfx);
+    const directionMarkersGfx = new Graphics();
+    app.stage.addChild(directionMarkersGfx);
     app.stage.addChild(compassWindText);
     app.stage.addChild(compassNorthText);
     app.stage.addChild(labelLayer);
@@ -1020,7 +1119,8 @@ export function mountPixiScene(
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const factor = Math.exp(-event.deltaY * 0.0012);
-      camera.zoom = clamp(camera.zoom * factor, 0.45, 3.2);
+      const limits = getZoomLimits(sim.getSnapshot().mapType);
+      camera.zoom = clamp(camera.zoom * factor, limits.min, limits.max);
     };
 
     const minimapX = MINIMAP_X;
@@ -1176,6 +1276,7 @@ export function mountPixiScene(
       updateAndDrawParticles(particlesGfx, particles, dtRender);
       drawMiniMap(minimapGfx, game, camera, minimapX, MINIMAP_Y);
       drawWindCompass(compassGfx, game.ocean, camera.viewWidthPx);
+      drawDirectionMarkers(directionMarkersGfx, game, camera);
       const compassX = camera.viewWidthPx / 2;
       const compassY = 87;
       const windDeg = ((game.ocean.windDirRad * 180) / Math.PI + 360) % 360;
