@@ -1,4 +1,4 @@
-// Last touched by agent: 2026-05-04T21:05:00Z
+// Last touched by agent: 2026-05-04T22:00:00Z
 import { useEffect, useRef, useState } from "react";
 import { mountPixiScene, type SceneHandle } from "./render/pixiScene";
 import type { SimulationAuthority } from "./sim/runtime";
@@ -15,6 +15,7 @@ export default function App(): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const hudRef = useRef<HTMLDivElement | null>(null);
   const statusRef = useRef<HTMLDivElement | null>(null);
+  const zoomRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<SceneHandle | null>(null);
   const [started, setStarted] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -31,7 +32,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     if (!started || !hostRef.current || !hudRef.current || !statusRef.current) return;
-    const scene = mountPixiScene(hostRef.current, hudRef.current, statusRef.current, { authority });
+    const scene = mountPixiScene(hostRef.current, hudRef.current, statusRef.current, { authority, zoomEl: zoomRef.current ?? undefined });
     sceneRef.current = scene;
     return () => {
       scene.dispose();
@@ -47,14 +48,6 @@ export default function App(): JSX.Element {
     sceneRef.current?.centerOnPlayer();
   };
 
-  const handleZoomIn = () => {
-    sceneRef.current?.zoomIn();
-  };
-
-  const handleZoomOut = () => {
-    sceneRef.current?.zoomOut();
-  };
-
   return (
     <main className="app-shell">
       <section className="title-panel">
@@ -64,18 +57,13 @@ export default function App(): JSX.Element {
 
       {started && (
         <section className="controls-bar">
-          <button className="btn-camera" onClick={handleZoomOut} type="button">
-            Zoom -
-          </button>
-          <button className="btn-camera" onClick={handleZoomIn} type="button">
-            Zoom +
-          </button>
           <button className="btn-camera" onClick={handleCenter} type="button">
             My Ship
           </button>
           <button className="btn-reset" onClick={handleReset} type="button">
             Reset
           </button>
+          <div className="zoom-display" ref={zoomRef}>Zoom: 1.00×</div>
         </section>
       )}
 

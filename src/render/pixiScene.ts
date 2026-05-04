@@ -1,4 +1,4 @@
-// Last touched by agent: 2026-05-04T21:05:00Z
+// Last touched by agent: 2026-05-04T22:00:00Z
 // Purpose: Pixi scene — ship rendering, effects, and camera zoom/centering controls.
 import { Application, Color, Graphics, Text } from "pixi.js";
 import { FEET_TO_PX, HALF_WORLD_FT, VIEW_SIZE_PX, WORLD_SIZE_FT } from "../config/world";
@@ -51,6 +51,51 @@ type DamageLabel = {
   age: number;
   maxAge: number;
 };
+
+type SinkingShip = {
+  shipId: number;
+  team: "player" | "enemy";
+  xFt: number;
+  yFt: number;
+  headingRad: number;
+  lengthFt: number;
+  beamFt: number;
+  age: number;
+  maxAge: number;
+};
+
+type Crumb = {
+  xFt: number;
+  yFt: number;
+  team: "player" | "enemy";
+  bornSec: number;
+};
+
+type ShipMatchStats = {
+  shipId: number;
+  team: "player" | "enemy";
+  shipClass: string;
+  shotsFired: number;
+  shotsHit: number;
+  damageDealt: number;
+  damageReceived: number;
+};
+
+function initMatchStats(game: GameState): Map<number, ShipMatchStats> {
+  const map = new Map<number, ShipMatchStats>();
+  for (const ship of game.ships) {
+    map.set(ship.id, {
+      shipId: ship.id,
+      team: ship.team,
+      shipClass: ship.shipClass,
+      shotsFired: 0,
+      shotsHit: 0,
+      damageDealt: 0,
+      damageReceived: 0,
+    });
+  }
+  return map;
+}
 
 function getLatestFrameEvent(events: SimulationEvent[]): SimulationFrameEvent | null {
   for (let i = events.length - 1; i >= 0; i -= 1) {
@@ -131,7 +176,7 @@ function createCamera(game: GameState): CameraState {
     yFt: player?.yFt ?? 0,
     targetXFt: player?.xFt ?? 0,
     targetYFt: player?.yFt ?? 0,
-    zoom: 0.82,
+    zoom: 1.0,
     viewWidthPx: VIEW_SIZE_PX,
     viewHeightPx: VIEW_SIZE_PX,
   };
@@ -453,6 +498,75 @@ function minimapToWorld(canvasX: number, canvasY: number, mapX: number, mapY: nu
   };
 }
 
+function drawSinkingShips(g: Graphics, sinkingShips: Map<number, SinkingShip>, camera: CameraState): void {
+  for (const [, sk] of sinkingShips) {
+    const t = clamp(sk.age / sk.maxAge, 0, 1);
+    const alpha = 1 - t;
+    if (alpha < 0.02) continue;
+
+    const sinkFt = t * t * sk.beamFt * 1.4;
+    const drawYFt = sk.yFt - sinkFt;
+    const c = Math.cos(sk.headingRad);
+    const s = Math.sin(sk.headingRad);
+    const toWld = (lx: number, ly: number) => ({
+      xFt: sk.xFt + lx * c - ly * s,
+      yFt: drawYFt + lx * s + ly * c,
+    });
+
+    const lh = sk.lengthFt * 0.5;
+    const bh = sk.beamFt * 0.5;
+    const pts = [
+      { x: lh, y: 0 }, { x: lh * 0.56, y: -bh * 0.96 }, { x: lh * 0.05, y: -bh },
+      { x: -lh * 0.70, y: -bh * 0.72 }, { x: -lh, y: -bh * 0.25 }, { x: -lh, y: bh * 0.25 },
+      { x: -lh * 0.70, y: bh * 0.72 }, { x: lh * 0.05, y: bh }, { x: lh * 0.56, y: bh * 0.96 },
+    ];
+    const hullPoints: number[] = [];
+    for (const p of pts) {
+      const w = toWld(p.x, p.y);
+      const sc = toScreen(camera, w.xFt, w.yFt);
+      hullPoints.push(sc.x, sc.y);
+    }
+    const hullColor = sk.team === "player" ? "#d8bf7a" : "#b86860";
+    g.poly(hullPoints).fill({ color: hullColor, alpha: alpha * 0.9 });
+
+    const center = toScreen(camera, sk.xFt, drawYFt);
+    const ringR = 8 + t * sk.lengthFt * FEET_TO_PX * camera.zoom * 0.65;
+    g.circle(center.x, center.y, ringR).stroke({ color: 0x8ecde0, width: 1.5, alpha: alpha * 0.5 });
+    if (t > 0.12) {
+      g.circle(center.x, center.y, ringR * 0.5).stroke({ color: 0xb0dce8, width: 1, alpha: alpha * 0.3 });
+    }
+  }
+}
+
+function drawCrumbs(g: Graphics, crumbs: Crumb[], currentTimeSec: number, camera: CameraState): void {
+  g.clear();
+  const CRUMB_MAX_AGE = 60;
+  for (const crumb of crumbs) {
+    const age = currentTimeSec - crumb.bornSec;
+    if (age >= CRUMB_MAX_AGE) continue;
+    const alpha = (1 - age / CRUMB_MAX_AGE) * 0.52;
+    const sc = toScreen(camera, crumb.xFt, crumb.yFt);
+    const color = crumb.team === "player" ? 0xf0d27a : 0xd46a62;
+    g.circle(sc.x, sc.y, 1.8).fill({ color, alpha });
+  }
+}
+
+function buildVictorySummary(winner: "player" | "enemy" | "draw", game: GameState, stats: Map<number, ShipMatchStats>): string {
+  const title = winner === "player" ? "Victory!" : winner === "enemy" ? "Defeat" : "Draw";
+  const titleColor = winner === "player" ? "#6ee780" : winner === "enemy" ? "#ec5a5a" : "#f3bf4f";
+  let rows = "";
+  for (const ship of game.ships) {
+    const st = stats.get(ship.id);
+    if (!st) continue;
+    const label = ship.team === "player" ? `${ship.shipClass} (You)` : `${ship.shipClass} (Enemy)`;
+    const hullPct = Math.round((ship.hullHp / ship.maxHullHp) * 100);
+    const hitRate = st.shotsFired > 0 ? Math.round((st.shotsHit / st.shotsFired) * 100) : 0;
+    const status = ship.sunk ? `<span style="color:#ec5a5a">Sunk</span>` : `<span style="color:#6ee780">Afloat</span>`;
+    rows += `<tr><td>${label}</td><td>${st.shotsFired}</td><td>${st.shotsHit} (${hitRate}%)</td><td>${st.damageDealt}</td><td>Hull ${hullPct}%</td><td>${status}</td></tr>`;
+  }
+  return `<div class="victory-panel"><div class="victory-title" style="color:${titleColor}">[${title}]</div><div class="victory-subtitle">Battle Summary</div><table class="victory-table"><thead><tr><th>Ship</th><th>Shots</th><th>Hits</th><th>Dmg</th><th>Hull</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table><div class="victory-footer">Press Reset to play again.</div></div>`;
+}
+
 function drawShips(
   g: Graphics,
   game: GameState,
@@ -461,6 +575,8 @@ function drawShips(
 ): void {
   g.clear();
   for (const ship of game.ships) {
+    if (ship.sunk) continue;
+
     const maxSpeed = SHIP_BALANCE[ship.shipClass].maxSpeedFtPerSec;
     const speedRatio = clamp(ship.speedFtPerSec / Math.max(1, maxSpeed), 0, 1.4);
 
@@ -489,7 +605,7 @@ function drawShips(
     }
 
     const hullColor = ship.team === "player" ? "#d8bf7a" : "#b86860";
-    g.poly(hullPoints).fill(ship.sunk ? "#4d4d4d" : hullColor);
+    g.poly(hullPoints).fill(hullColor);
 
     drawSailsForShip(g, ship, camera, game.ocean, speedRatio);
 
@@ -554,7 +670,7 @@ function drawShips(
     const rs3 = toScreen(camera, rw3.xFt, rw3.yFt);
     const rs4 = toScreen(camera, rw4.xFt, rw4.yFt);
 
-    g.poly([rs1.x, rs1.y, rs2.x, rs2.y, rs3.x, rs3.y, rs4.x, rs4.y]).fill(ship.sunk ? "#4c4c4c" : "#2f2f2f");
+    g.poly([rs1.x, rs1.y, rs2.x, rs2.y, rs3.x, rs3.y, rs4.x, rs4.y]).fill("#2f2f2f");
 
     const hingePort = shipToWorld(ship, rudderHingeX, rudderWidthHalf * 1.03);
     const hingeStar = shipToWorld(ship, rudderHingeX, -rudderWidthHalf * 1.03);
@@ -563,14 +679,6 @@ function drawShips(
     g.moveTo(hs1.x, hs1.y);
     g.lineTo(hs2.x, hs2.y);
     g.stroke({ color: "#151515", width: Math.max(1, 1.3 * camera.zoom) });
-
-    if (ship.sunk) {
-      const hw = ship.lengthFt * FEET_TO_PX * camera.zoom * 0.34;
-      g.moveTo(center.x - hw, center.y - hw).lineTo(center.x + hw, center.y + hw);
-      g.stroke({ color: "#ff4444", width: 2, alpha: 0.8 });
-      g.moveTo(center.x + hw, center.y - hw).lineTo(center.x - hw, center.y + hw);
-      g.stroke({ color: "#ff4444", width: 2, alpha: 0.8 });
-    }
   }
 
   for (const shot of game.projectiles) {
@@ -756,6 +864,7 @@ export type SceneHandle = {
 export type MountPixiSceneOpts = {
   authority?: SimulationAuthority;
   seed?: number;
+  zoomEl?: HTMLElement;
 };
 
 export function mountPixiScene(
@@ -775,6 +884,12 @@ export function mountPixiScene(
   const aiDebugLabels = new Map<number, Text>();
   const rudderDisplayByShipId = new Map<number, number>();
   const gunSmokeTimers = new Map<string, number>();
+  const sinkingShips = new Map<number, SinkingShip>();
+  const prevSunkIds = new Set<number>();
+  const crumbs: Crumb[] = [];
+  let crumbTimer = 0;
+  let matchStats = initMatchStats(sim.getSnapshot());
+  let summaryShown = false;
   const camera = createCamera(sim.getSnapshot());
   let followPlayer = true;
 
@@ -791,8 +906,14 @@ export function mountPixiScene(
       aiDebugLabels.clear();
       rudderDisplayByShipId.clear();
       gunSmokeTimers.clear();
+      sinkingShips.clear();
+      prevSunkIds.clear();
+      crumbs.length = 0;
+      crumbTimer = 0;
+      matchStats = initMatchStats(sim.getSnapshot());
+      summaryShown = false;
       followPlayer = true;
-      camera.zoom = 0.82;
+      camera.zoom = 1.0;
       centerCameraOnPlayer(sim.getSnapshot(), camera);
       hudEl.textContent = "";
       statusEl.textContent = "";
@@ -819,6 +940,7 @@ export function mountPixiScene(
     host.appendChild(app.canvas);
 
     const oceanGfx = new Graphics();
+    const crumbsGfx = new Graphics();
     const shipsGfx = new Graphics();
     const particlesGfx = new Graphics();
     const minimapGfx = new Graphics();
@@ -842,6 +964,7 @@ export function mountPixiScene(
     const labelLayer = new Graphics();
     const aiDebugLayer = new Graphics();
     app.stage.addChild(oceanGfx);
+    app.stage.addChild(crumbsGfx);
     app.stage.addChild(shipsGfx);
     app.stage.addChild(particlesGfx);
     app.stage.addChild(minimapGfx);
@@ -915,7 +1038,66 @@ export function mountPixiScene(
       }
 
       const game = sim.getSnapshot();
-      const latestFrame = getLatestFrameEvent(sim.consumeEvents());
+      const consumedEvents = sim.consumeEvents();
+      const latestFrame = getLatestFrameEvent(consumedEvents);
+
+      // ── Detect newly sunk ships and start sinking animation ──────────────
+      for (const ship of game.ships) {
+        if (ship.sunk && !prevSunkIds.has(ship.id)) {
+          prevSunkIds.add(ship.id);
+          sinkingShips.set(ship.id, {
+            shipId: ship.id, team: ship.team,
+            xFt: ship.xFt, yFt: ship.yFt, headingRad: ship.headingRad,
+            lengthFt: ship.lengthFt, beamFt: ship.beamFt,
+            age: 0, maxAge: 4.5,
+          });
+          const sc = toScreen(camera, ship.xFt, ship.yFt);
+          for (let i = 0; i < 10; i += 1) {
+            const angle = (Math.PI * 2 * i) / 10;
+            const speed = 14 + Math.random() * 22;
+            particles.push({ x: sc.x, y: sc.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, age: 0, maxAge: 1.6 + Math.random() * 0.6, startRadius: 2.5, endRadius: 7, startAlpha: 0.65, color: 0x88ccdd });
+          }
+        }
+      }
+
+      // ── Advance sinking ship ages ─────────────────────────────────────────
+      for (const [id, sk] of sinkingShips) {
+        sk.age += dtRender;
+        if (sk.age >= sk.maxAge) sinkingShips.delete(id);
+      }
+
+      // ── Accumulate per-ship match stats ───────────────────────────────────
+      for (const ev of consumedEvents) {
+        if (ev.type !== "frame") continue;
+        for (const fe of ev.firingEvents) {
+          const st = matchStats.get(fe.shipId);
+          if (st) st.shotsFired += 1;
+        }
+        for (const de of ev.damageEvents) {
+          if (de.kind === "cannon" && de.attackerShipId !== undefined) {
+            const atk = matchStats.get(de.attackerShipId);
+            if (atk) { atk.shotsHit += 1; atk.damageDealt += de.amount; }
+          }
+          if (de.targetShipId !== undefined) {
+            const tgt = matchStats.get(de.targetShipId);
+            if (tgt) tgt.damageReceived += de.amount;
+          }
+        }
+      }
+
+      // ── Breadcrumbs: drop every 2s, expire at 60s ────────────────────────
+      crumbTimer += dtRender;
+      if (crumbTimer >= 2.0) {
+        crumbTimer -= 2.0;
+        for (const ship of game.ships) {
+          if (!ship.sunk) crumbs.push({ xFt: ship.xFt, yFt: ship.yFt, team: ship.team, bornSec: game.ocean.timeSec });
+        }
+      }
+      // Prune crumbs older than 60s
+      let ci = 0;
+      while (ci < crumbs.length) {
+        if (game.ocean.timeSec - crumbs[ci].bornSec > 60) { crumbs.splice(ci, 1); } else { ci += 1; }
+      }
 
       const player = game.ships.find((ship) => ship.team === "player");
       if (followPlayer && player && !player.sunk) {
@@ -946,7 +1128,9 @@ export function mountPixiScene(
       }
 
       drawOcean(oceanGfx, game.ocean, camera.viewWidthPx, camera.viewHeightPx, camera.zoom);
+      drawCrumbs(crumbsGfx, crumbs, game.ocean.timeSec, camera);
       drawShips(shipsGfx, game, camera, rudderDisplayByShipId);
+      drawSinkingShips(shipsGfx, sinkingShips, camera);
       updateAndDrawParticles(particlesGfx, particles, dtRender);
       drawMiniMap(minimapGfx, game, camera, minimapX, MINIMAP_Y);
       drawWindCompass(compassGfx, game.ocean, camera.viewWidthPx);
@@ -962,6 +1146,8 @@ export function mountPixiScene(
       updateDamageLabels(damageLabels, dtRender, camera);
       updateAiDebugLabels(game, camera, aiDebugLabels, aiDebugLayer);
 
+      if (opts?.zoomEl) opts.zoomEl.textContent = `Zoom: ${camera.zoom.toFixed(2)}\u00d7`;
+
       const hud = getPlayerHud(game);
       const gunIcon = (g: GunInfo): string => {
         if (g.destroyed) return '<span style="color:#cc3322;font-weight:bold">X</span>';
@@ -970,21 +1156,17 @@ export function mountPixiScene(
       };
       const portIcons = hud.portGuns.map(gunIcon).join(" ");
       const stbdIcons = hud.starboardGuns.map(gunIcon).join(" ");
+      const rudderLabel = hud.rudderDeg === 0 ? `0\u00b0 (Center)` : hud.rudderDeg > 0 ? `${hud.rudderDeg}\u00b0 Stbd` : `${Math.abs(hud.rudderDeg)}\u00b0 Port`;
       hudEl.innerHTML = [
         `<div class="hud-section"><div class="hud-title">Ship Status</div><div class="hud-row">Hull: ${hud.hull}%</div><div class="hud-row">Sails: ${hud.sails}%</div><div class="hud-row">Rudder: ${hud.rudder}%</div><div class="hud-row">Crew: ${hud.crew}%</div><div class="hud-row">Enemies Afloat: ${hud.enemiesAfloat}</div></div>`,
         `<div class="hud-section"><div class="hud-title">Gun Status</div><div class="hud-row">Port &nbsp; ${portIcons}</div><div class="hud-row">Stbd &nbsp; ${stbdIcons}</div></div>`,
-        `<div class="hud-section"><div class="hud-title">Heading / Speed</div><div class="hud-row">Heading: ${hud.headingDeg}\u00b0</div><div class="hud-row">Rudder: ${hud.rudderDeg === 0 ? "0\u00b0 (Center)" : hud.rudderDeg > 0 ? hud.rudderDeg + "\u00b0 Starboard" : Math.abs(hud.rudderDeg) + "\u00b0 Port"}</div><div class="hud-row">Speed: ${hud.speed} ft/s</div><div class="hud-row">Sail Trim: ${hud.sailTrim}%</div><div class="hud-row">Zoom: ${camera.zoom.toFixed(2)}x</div></div>`,
+        `<div class="hud-section"><div class="hud-title">Heading / Speed</div><div class="hud-row hud-row-large">Sail Trim: ${hud.sailTrim}%</div><div class="hud-row hud-row-large">Rudder: ${rudderLabel}</div><div class="hud-row">Heading: ${hud.headingDeg}\u00b0</div><div class="hud-row">Speed: ${hud.speed} ft/s</div></div>`,
       ].join("");
 
-      if (game.winner) {
-        const w = game.winner;
-        statusEl.innerHTML =
-          w === "player"
-            ? `<div class="status-line">[Victory]</div><div class="status-line">Enemy fleet destroyed.</div><div class="status-line">Press Reset to play again.</div>`
-            : w === "enemy"
-              ? `<div class="status-line">[Defeat]</div><div class="status-line">Your ship has sunk.</div><div class="status-line">Press Reset to play again.</div>`
-              : `<div class="status-line">[Draw]</div><div class="status-line">Press Reset to play again.</div>`;
-      } else {
+      if (game.winner && !summaryShown) {
+        summaryShown = true;
+        statusEl.innerHTML = buildVictorySummary(game.winner, game, matchStats);
+      } else if (!game.winner) {
         statusEl.innerHTML = `<div class="status-hint">[I] Controls</div>`;
       }
     });

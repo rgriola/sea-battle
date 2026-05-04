@@ -78,6 +78,7 @@ export type FiringEvent = {
   xFt: number;
   yFt: number;
   angleRad: number;
+  shipId: number;
 };
 
 export type ImpactEvent = {
@@ -91,6 +92,8 @@ export type DamageEvent = {
   amount: number;
   targetTeam: Team;
   kind: "cannon" | "ram" | "rudder";
+  attackerShipId?: number;
+  targetShipId?: number;
 };
 
 export type GameState = {

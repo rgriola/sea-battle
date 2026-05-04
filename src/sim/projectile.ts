@@ -65,6 +65,8 @@ export function updateProjectiles(game: GameState, dt: number): void {
         amount: projectile.damageHull,
         targetTeam: ship.team,
         kind: "cannon",
+        attackerShipId: projectile.ownerShipId,
+        targetShipId: ship.id,
       });
       if (rudderDamage > 0) {
         game.damageEvents.push({
@@ -73,6 +75,8 @@ export function updateProjectiles(game: GameState, dt: number): void {
           amount: rudderDamage,
           targetTeam: ship.team,
           kind: "rudder",
+          attackerShipId: projectile.ownerShipId,
+          targetShipId: ship.id,
         });
       }
 

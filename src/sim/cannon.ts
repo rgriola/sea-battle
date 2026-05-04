@@ -79,7 +79,7 @@ export function tryFireBroadside(
     const spread = degToRad(rng.range(-CANNON_SPREAD_DEG, CANNON_SPREAD_DEG));
     const shotHeading = shooter.headingRad + sideAngle + spread;
 
-    game.firingEvents.push({ xFt: muzzle.x, yFt: muzzle.y, angleRad: shotHeading });
+    game.firingEvents.push({ xFt: muzzle.x, yFt: muzzle.y, angleRad: shotHeading, shipId: shooter.id });
 
     const shot: ProjectileState = {
       id: game.nextProjectileId,
