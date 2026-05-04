@@ -1001,6 +1001,7 @@ export type MountPixiSceneOpts = {
   seed?: number;
   zoomEl?: HTMLElement;
   mapType?: import("../config/maps").MapType;
+  playerShipClass?: import("../config/balance").ShipClass;
 };
 
 export function mountPixiScene(
@@ -1015,6 +1016,7 @@ export function mountPixiScene(
     seed: opts?.seed ?? 64,
     matchId: "local-sea-battle",
     mapType: opts?.mapType ?? "open-ocean",
+    playerShipClass: opts?.playerShipClass ?? "sloop",
   });
   const particles: Particle[] = [];
   const damageLabels: DamageLabel[] = [];

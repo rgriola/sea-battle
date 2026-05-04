@@ -13,6 +13,7 @@ export type SimulationSession = {
   seed: number;
   authority: SimulationAuthority;
   tickSeconds: number;
+  playerShipClass: import("../config/balance").ShipClass;
   game: GameState;
   rng: Rng;
 };
@@ -100,17 +101,20 @@ export function createSimulationSession(opts?: {
   authority?: SimulationAuthority;
   tickSeconds?: number;
   mapType?: MapType;
+  playerShipClass?: import("../config/balance").ShipClass;
 }): SimulationSession {
   const seed = opts?.seed ?? 42;
   const tickSeconds = opts?.tickSeconds ?? SIM_TICK_SECONDS;
   const mapType = opts?.mapType ?? "open-ocean";
-  const initial = createInitialGame(mapType, seed);
+  const playerShipClass = opts?.playerShipClass ?? "sloop";
+  const initial = createInitialGame(mapType, seed, playerShipClass);
 
   return {
     matchId: opts?.matchId ?? "local-sea-battle",
     seed,
     authority: opts?.authority ?? "local-client",
     tickSeconds,
+    playerShipClass,
     game: initial.game,
     rng: initial.rng,
   };
@@ -118,7 +122,7 @@ export function createSimulationSession(opts?: {
 
 export function resetSimulationSession(session: SimulationSession, seed: number): void {
   const mapType = session.game.mapType;
-  const initial = createInitialGame(mapType, seed);
+  const initial = createInitialGame(mapType, seed, session.playerShipClass);
   session.seed = seed;
   session.game = initial.game;
   session.rng = initial.rng;
@@ -148,6 +152,7 @@ export type AdapterOpts = {
   matchId?: string;
   tickSeconds?: number;
   mapType?: MapType;
+  playerShipClass?: import("../config/balance").ShipClass;
 };
 
 export function createLocalSimulationAdapter(opts?: AdapterOpts): SimulationAdapter {

@@ -1,4 +1,4 @@
-import { SHIP_BALANCE } from "../config/balance";
+import { SHIP_BALANCE, type ShipClass } from "../config/balance";
 import { SIM_TICK_SECONDS } from "../config/world";
 import { getMap, type MapType } from "../config/maps";
 import { latLonToFt } from "./coordinates";
@@ -39,7 +39,11 @@ function assignEnemyRoles(game: GameState, rng: Rng): void {
   }
 }
 
-export function createInitialGame(mapType: MapType = "open-ocean", seed = 42): { game: GameState; rng: Rng } {
+export function createInitialGame(
+  mapType: MapType = "open-ocean",
+  seed = 42,
+  playerShipClass: ShipClass = "sloop",
+): { game: GameState; rng: Rng } {
   const rng = createRng(seed);
   const map = getMap(mapType);
   const initialWindDirRad = rng.next() * Math.PI * 2 - Math.PI;
@@ -61,7 +65,7 @@ export function createInitialGame(mapType: MapType = "open-ocean", seed = 42): {
     tick: 0,
     nextProjectileId: 1,
     ships: [
-      createShip(1, "sloop", "player", playerPos.xFt, playerPos.yFt, 0),
+      createShip(1, playerShipClass, "player", playerPos.xFt, playerPos.yFt, 0),
       createShip(2, "brigantine", "enemy", spawnEnemyOne.xFt, spawnEnemyOne.yFt, spawnEnemyOne.headingRad),
       createShip(3, "schooner", "enemy", spawnEnemyTwo.xFt, spawnEnemyTwo.yFt, spawnEnemyTwo.headingRad),
     ],
