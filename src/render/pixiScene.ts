@@ -1,4 +1,4 @@
-// Last touched by agent: 2026-05-04T20:45:00Z
+// Last touched by agent: 2026-05-04T21:05:00Z
 // Purpose: Pixi scene — ship rendering, effects, and camera zoom/centering controls.
 import { Application, Color, Graphics, Text } from "pixi.js";
 import { FEET_TO_PX, HALF_WORLD_FT, VIEW_SIZE_PX, WORLD_SIZE_FT } from "../config/world";
@@ -6,7 +6,8 @@ import { SHIP_BALANCE } from "../config/balance";
 import { createControls } from "../input/controls";
 import { getPlayerHud } from "../sim/engine";
 import {
-  createLocalSimulationAdapter,
+  createSimulationAdapterForMode,
+  type SimulationAuthority,
   type SimulationEvent,
   type SimulationFrameEvent,
 } from "../sim/runtime";
@@ -752,13 +753,22 @@ export type SceneHandle = {
   zoomOut: () => void;
 };
 
-export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: HTMLElement): SceneHandle {
+export type MountPixiSceneOpts = {
+  authority?: SimulationAuthority;
+  seed?: number;
+};
+
+export function mountPixiScene(
+  host: HTMLElement,
+  hudEl: HTMLElement,
+  statusEl: HTMLElement,
+  opts?: MountPixiSceneOpts,
+): SceneHandle {
   const app = new Application();
   let cancelled = false;
-  let sim = createLocalSimulationAdapter({
-    seed: 64,
+  let sim = createSimulationAdapterForMode(opts?.authority ?? "local-client", {
+    seed: opts?.seed ?? 64,
     matchId: "local-sea-battle",
-    authority: "local-client",
   });
   const particles: Particle[] = [];
   const damageLabels: DamageLabel[] = [];

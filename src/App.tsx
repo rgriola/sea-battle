@@ -1,6 +1,15 @@
-// Last touched by agent: 2026-05-04T21:00:00Z
+// Last touched by agent: 2026-05-04T21:05:00Z
 import { useEffect, useRef, useState } from "react";
 import { mountPixiScene, type SceneHandle } from "./render/pixiScene";
+import type { SimulationAuthority } from "./sim/runtime";
+
+function readAuthorityMode(): SimulationAuthority {
+  if (typeof window !== "undefined") {
+    const param = new URLSearchParams(window.location.search).get("authority");
+    if (param === "server-authoritative") return "server-authoritative";
+  }
+  return "local-client";
+}
 
 export default function App(): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -9,6 +18,7 @@ export default function App(): JSX.Element {
   const sceneRef = useRef<SceneHandle | null>(null);
   const [started, setStarted] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  const authority = readAuthorityMode();
 
   useEffect(() => {
     if (!started) return;
@@ -21,7 +31,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     if (!started || !hostRef.current || !hudRef.current || !statusRef.current) return;
-    const scene = mountPixiScene(hostRef.current, hudRef.current, statusRef.current);
+    const scene = mountPixiScene(hostRef.current, hudRef.current, statusRef.current, { authority });
     sceneRef.current = scene;
     return () => {
       scene.dispose();

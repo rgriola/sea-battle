@@ -1,3 +1,5 @@
+// Last touched by agent: 2026-05-04T21:05:00Z
+// Purpose: Simulation runtime boundary — local and remote adapters with authority metadata.
 import { SIM_TICK_SECONDS } from "../config/world";
 import { createInitialGame, tickGame } from "./engine";
 import type { Rng } from "./rng";
@@ -137,13 +139,14 @@ export function getSimulationMeta(session: SimulationSession): SimulationMeta {
   };
 }
 
-export function createLocalSimulationAdapter(opts?: {
+export type AdapterOpts = {
   seed?: number;
   matchId?: string;
-  authority?: SimulationAuthority;
   tickSeconds?: number;
-}): SimulationAdapter {
-  const session = createSimulationSession(opts);
+};
+
+export function createLocalSimulationAdapter(opts?: AdapterOpts): SimulationAdapter {
+  const session = createSimulationSession({ ...opts, authority: "local-client" });
   let input = createEmptyInputState();
   const eventQueue: SimulationEvent[] = [];
 
@@ -188,4 +191,105 @@ export function createLocalSimulationAdapter(opts?: {
       return snapshot;
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Stage 3: Remote/server-authoritative adapter stub
+//
+// Runs locally as a prediction engine but marks authority as server-authoritative.
+// Call applyServerSnapshot() whenever a trusted state frame arrives from the server
+// (WebSocket, REST poll, etc.) — it overwrites the local prediction and drains
+// any events produced by the reconciled state.
+// ---------------------------------------------------------------------------
+
+export type RemoteSimulationAdapter = SimulationAdapter & {
+  applyServerSnapshot: (serverState: GameState) => void;
+};
+
+export function createRemoteSimulationAdapter(opts?: AdapterOpts): RemoteSimulationAdapter {
+  const session = createSimulationSession({ ...opts, authority: "server-authoritative" });
+  let input = createEmptyInputState();
+  const eventQueue: SimulationEvent[] = [];
+
+  const base: SimulationAdapter = {
+    dispatch: (command) => {
+      if (command.type === "set-input") {
+        input = cloneInput(command.input);
+        return;
+      }
+      if (command.type === "reset") {
+        resetSimulationSession(session, command.seed);
+        input = createEmptyInputState();
+        eventQueue.length = 0;
+      }
+    },
+    step: (dt = session.tickSeconds) => {
+      const winnerBefore = session.game.winner;
+      // Run local prediction tick — server state overwrites this on next snapshot
+      stepSimulation(session, input, dt);
+
+      eventQueue.push({
+        type: "frame",
+        tick: session.game.tick,
+        firingEvents: cloneFiringEvents(session.game.firingEvents),
+        impactEvents: cloneImpactEvents(session.game.impactEvents),
+        damageEvents: cloneDamageEvents(session.game.damageEvents),
+      });
+
+      if (!winnerBefore && session.game.winner) {
+        eventQueue.push({
+          type: "match-ended",
+          tick: session.game.tick,
+          winner: session.game.winner,
+        });
+      }
+    },
+    getSnapshot: () => session.game,
+    getMeta: () => getSimulationMeta(session),
+    consumeEvents: () => {
+      const snapshot = eventQueue.slice();
+      eventQueue.length = 0;
+      return snapshot;
+    },
+  };
+
+  return {
+    ...base,
+    applyServerSnapshot: (serverState: GameState) => {
+      // Authoritative reconcile: overwrite local prediction with server state.
+      // Fire a synthetic frame event so the renderer picks up the reconciled events.
+      const winnerBefore = session.game.winner;
+      session.game = serverState;
+
+      eventQueue.push({
+        type: "frame",
+        tick: serverState.tick,
+        firingEvents: cloneFiringEvents(serverState.firingEvents),
+        impactEvents: cloneImpactEvents(serverState.impactEvents),
+        damageEvents: cloneDamageEvents(serverState.damageEvents),
+      });
+
+      if (!winnerBefore && serverState.winner) {
+        eventQueue.push({
+          type: "match-ended",
+          tick: serverState.tick,
+          winner: serverState.winner,
+        });
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Mode factory — selects the correct adapter for local vs server-authoritative play
+// ---------------------------------------------------------------------------
+
+export function createSimulationAdapterForMode(
+  authority: SimulationAuthority,
+  opts?: AdapterOpts,
+): SimulationAdapter {
+  if (authority === "server-authoritative") {
+    return createRemoteSimulationAdapter(opts);
+  }
+  return createLocalSimulationAdapter(opts);
 }
