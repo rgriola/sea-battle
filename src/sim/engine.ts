@@ -48,14 +48,22 @@ export function createInitialGame(mapType: MapType = "open-ocean", seed = 42): {
   // Convert map lat/lon spawn points to ft-space
   const playerPos = latLonToFt(map.playerSpawnLat, map.playerSpawnLon, map.bounds.centerLat, map.bounds.centerLon);
   const enemyPos = latLonToFt(map.enemySpawnLat, map.enemySpawnLon, map.bounds.centerLat, map.bounds.centerLon);
+  const spawnEnemyOne =
+    mapType === "open-ocean"
+      ? { xFt: playerPos.xFt + 1200, yFt: playerPos.yFt + 350, headingRad: Math.PI }
+      : { xFt: enemyPos.xFt + 300, yFt: enemyPos.yFt + 100, headingRad: Math.PI };
+  const spawnEnemyTwo =
+    mapType === "open-ocean"
+      ? { xFt: playerPos.xFt + 1650, yFt: playerPos.yFt - 420, headingRad: Math.PI * 0.85 }
+      : { xFt: enemyPos.xFt + 200, yFt: enemyPos.yFt - 150, headingRad: Math.PI * 0.85 };
 
   const game: GameState = {
     tick: 0,
     nextProjectileId: 1,
     ships: [
       createShip(1, "sloop", "player", playerPos.xFt, playerPos.yFt, 0),
-      createShip(2, "brigantine", "enemy", enemyPos.xFt + 300, enemyPos.yFt + 100, Math.PI),
-      createShip(3, "schooner", "enemy", enemyPos.xFt + 200, enemyPos.yFt - 150, Math.PI * 0.85),
+      createShip(2, "brigantine", "enemy", spawnEnemyOne.xFt, spawnEnemyOne.yFt, spawnEnemyOne.headingRad),
+      createShip(3, "schooner", "enemy", spawnEnemyTwo.xFt, spawnEnemyTwo.yFt, spawnEnemyTwo.headingRad),
     ],
     projectiles: [],
     ocean: {
