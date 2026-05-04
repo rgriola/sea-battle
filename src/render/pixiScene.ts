@@ -1,11 +1,15 @@
-// Last touched by agent: 2026-05-04T20:34:00Z
+// Last touched by agent: 2026-05-04T20:45:00Z
 // Purpose: Pixi scene — ship rendering, effects, and camera zoom/centering controls.
 import { Application, Color, Graphics, Text } from "pixi.js";
 import { FEET_TO_PX, HALF_WORLD_FT, VIEW_SIZE_PX, WORLD_SIZE_FT } from "../config/world";
 import { SHIP_BALANCE } from "../config/balance";
 import { createControls } from "../input/controls";
 import { getPlayerHud } from "../sim/engine";
-import { createSimulationSession, resetSimulationSession, stepSimulation } from "../sim/runtime";
+import {
+  createLocalSimulationAdapter,
+  type SimulationEvent,
+  type SimulationFrameEvent,
+} from "../sim/runtime";
 import type { GunInfo } from "../sim/engine";
 import { cannonOffset, localToWorld } from "../sim/cannon";
 import type { DamageEvent, FiringEvent, GameState, ImpactEvent, OceanState, ShipState } from "../sim/types";
@@ -46,6 +50,14 @@ type DamageLabel = {
   age: number;
   maxAge: number;
 };
+
+function getLatestFrameEvent(events: SimulationEvent[]): SimulationFrameEvent | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event.type === "frame") return event;
+  }
+  return null;
+}
 
 function updateAiDebugLabels(
   game: GameState,
@@ -743,7 +755,7 @@ export type SceneHandle = {
 export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: HTMLElement): SceneHandle {
   const app = new Application();
   let cancelled = false;
-  let sim = createSimulationSession({
+  let sim = createLocalSimulationAdapter({
     seed: 64,
     matchId: "local-sea-battle",
     authority: "local-client",
@@ -753,7 +765,7 @@ export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: 
   const aiDebugLabels = new Map<number, Text>();
   const rudderDisplayByShipId = new Map<number, number>();
   const gunSmokeTimers = new Map<string, number>();
-  const camera = createCamera(sim.game);
+  const camera = createCamera(sim.getSnapshot());
   let followPlayer = true;
 
   const handle: SceneHandle = {
@@ -761,7 +773,7 @@ export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: 
       cancelled = true;
     },
     reset: () => {
-      resetSimulationSession(sim, 42 + Math.floor(Math.random() * 100000));
+      sim.dispatch({ type: "reset", seed: 42 + Math.floor(Math.random() * 100000) });
       particles.length = 0;
       for (const label of damageLabels) label.text.destroy();
       damageLabels.length = 0;
@@ -771,13 +783,13 @@ export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: 
       gunSmokeTimers.clear();
       followPlayer = true;
       camera.zoom = 0.82;
-      centerCameraOnPlayer(sim.game, camera);
+      centerCameraOnPlayer(sim.getSnapshot(), camera);
       hudEl.textContent = "";
       statusEl.textContent = "";
     },
     centerOnPlayer: () => {
       followPlayer = true;
-      centerCameraOnPlayer(sim.game, camera);
+      centerCameraOnPlayer(sim.getSnapshot(), camera);
     },
     zoomIn: () => {
       camera.zoom = clamp(camera.zoom * 1.15, 0.45, 3.2);
@@ -886,12 +898,16 @@ export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: 
       const dtRender = Math.min(0.05, ticker.deltaMS / 1000);
       accumulator += dtRender;
 
+      sim.dispatch({ type: "set-input", input: controls.input });
       while (accumulator >= fixedDt) {
-        stepSimulation(sim, controls.input, fixedDt);
+        sim.step(fixedDt);
         accumulator -= fixedDt;
       }
 
-      const player = sim.game.ships.find((ship) => ship.team === "player");
+      const game = sim.getSnapshot();
+      const latestFrame = getLatestFrameEvent(sim.consumeEvents());
+
+      const player = game.ships.find((ship) => ship.team === "player");
       if (followPlayer && player && !player.sunk) {
         camera.targetXFt = player.xFt;
         camera.targetYFt = player.yFt;
@@ -902,37 +918,41 @@ export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: 
       camera.yFt += (camera.targetYFt - camera.yFt) * lerp;
 
       const rudderLerp = clamp(dtRender * 5.5, 0, 1);
-      for (const ship of sim.game.ships) {
+      for (const ship of game.ships) {
         const prev = rudderDisplayByShipId.get(ship.id) ?? 0;
         const target = ship.sunk ? 0 : ship.rudder;
         rudderDisplayByShipId.set(ship.id, prev + (target - prev) * rudderLerp);
       }
 
-      spawnFiringParticles(sim.game.firingEvents, particles, camera);
-      spawnImpactParticles(sim.game.impactEvents, particles, camera);
-      spawnDamageLabels(sim.game.damageEvents, damageLabels, labelLayer);
-      for (const ship of sim.game.ships) {
+      const firingEvents = latestFrame?.firingEvents ?? [];
+      const impactEvents = latestFrame?.impactEvents ?? [];
+      const damageEvents = latestFrame?.damageEvents ?? [];
+
+      spawnFiringParticles(firingEvents, particles, camera);
+      spawnImpactParticles(impactEvents, particles, camera);
+      spawnDamageLabels(damageEvents, damageLabels, labelLayer);
+      for (const ship of game.ships) {
         spawnDestroyedGunSmoke(ship, particles, camera, gunSmokeTimers, dtRender);
       }
 
-      drawOcean(oceanGfx, sim.game.ocean, camera.viewWidthPx, camera.viewHeightPx, camera.zoom);
-      drawShips(shipsGfx, sim.game, camera, rudderDisplayByShipId);
+      drawOcean(oceanGfx, game.ocean, camera.viewWidthPx, camera.viewHeightPx, camera.zoom);
+      drawShips(shipsGfx, game, camera, rudderDisplayByShipId);
       updateAndDrawParticles(particlesGfx, particles, dtRender);
-      drawMiniMap(minimapGfx, sim.game, camera, minimapX, MINIMAP_Y);
-      drawWindCompass(compassGfx, sim.game.ocean, camera.viewWidthPx);
+      drawMiniMap(minimapGfx, game, camera, minimapX, MINIMAP_Y);
+      drawWindCompass(compassGfx, game.ocean, camera.viewWidthPx);
       const compassX = camera.viewWidthPx / 2;
       const compassY = 87;
-      const windDeg = ((sim.game.ocean.windDirRad * 180) / Math.PI + 360) % 360;
-      const windKnots = sim.game.ocean.windSpeedKnots.toFixed(1);
+      const windDeg = ((game.ocean.windDirRad * 180) / Math.PI + 360) % 360;
+      const windKnots = game.ocean.windSpeedKnots.toFixed(1);
       compassWindText.text = `${windKnots} kn\n${windDeg.toFixed(0)}\u00b0`;
       compassWindText.x = compassX - COMPASS_R - 10;
       compassWindText.y = compassY;
       compassNorthText.x = compassX;
       compassNorthText.y = compassY - COMPASS_R - 4;
       updateDamageLabels(damageLabels, dtRender, camera);
-      updateAiDebugLabels(sim.game, camera, aiDebugLabels, aiDebugLayer);
+      updateAiDebugLabels(game, camera, aiDebugLabels, aiDebugLayer);
 
-      const hud = getPlayerHud(sim.game);
+      const hud = getPlayerHud(game);
       const gunIcon = (g: GunInfo): string => {
         if (g.destroyed) return '<span style="color:#cc3322;font-weight:bold">X</span>';
         if (g.ready) return '<span style="color:#44dd88">■</span>';
@@ -946,8 +966,8 @@ export function mountPixiScene(host: HTMLElement, hudEl: HTMLElement, statusEl: 
         `<div class="hud-section"><div class="hud-title">Heading / Speed</div><div class="hud-row">Heading: ${hud.headingDeg}\u00b0</div><div class="hud-row">Rudder: ${hud.rudderDeg === 0 ? "0\u00b0 (Center)" : hud.rudderDeg > 0 ? hud.rudderDeg + "\u00b0 Starboard" : Math.abs(hud.rudderDeg) + "\u00b0 Port"}</div><div class="hud-row">Speed: ${hud.speed} ft/s</div><div class="hud-row">Sail Trim: ${hud.sailTrim}%</div><div class="hud-row">Zoom: ${camera.zoom.toFixed(2)}x</div></div>`,
       ].join("");
 
-      if (sim.game.winner) {
-        const w = sim.game.winner;
+      if (game.winner) {
+        const w = game.winner;
         statusEl.innerHTML =
           w === "player"
             ? `<div class="status-line">[Victory]</div><div class="status-line">Enemy fleet destroyed.</div><div class="status-line">Press Reset to play again.</div>`
