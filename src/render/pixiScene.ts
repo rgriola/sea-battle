@@ -1,4 +1,4 @@
-// Last touched by agent: 2026-05-04T23:45:00Z
+// Last touched by agent: 2026-05-04T19:05:00Z
 // Purpose: Pixi scene — ship rendering, effects, and camera zoom/centering controls.
 import { Application, Color, Graphics, Text } from "pixi.js";
 import { FEET_TO_PX, HALF_WORLD_FT, VIEW_SIZE_PX, WORLD_SIZE_FT } from "../config/world";
@@ -105,6 +105,49 @@ function getLatestFrameEvent(events: SimulationEvent[]): SimulationFrameEvent | 
     if (event.type === "frame") return event;
   }
   return null;
+}
+
+type RenderDiagnosticsConfig = {
+  enabled: boolean;
+  intervalSec: number;
+  slowFrameMs: number;
+};
+
+type RenderDiagnosticsState = {
+  frames: number;
+  elapsedSec: number;
+  sumFrameMs: number;
+  maxFrameMs: number;
+  slowFrames: number;
+  stallsOver100Ms: number;
+  maxCatchupSteps: number;
+};
+
+function readRenderDiagnosticsConfig(): RenderDiagnosticsConfig {
+  if (typeof window === "undefined") {
+    return { enabled: false, intervalSec: 2, slowFrameMs: 28 };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const enabledFlag = params.get("renderDebug") ?? params.get("debugRender");
+  const intervalFlag = Number(params.get("renderDebugIntervalSec"));
+  const slowFrameFlag = Number(params.get("renderDebugSlowMs"));
+
+  return {
+    enabled: enabledFlag === "1" || enabledFlag === "true",
+    intervalSec: Number.isFinite(intervalFlag) && intervalFlag > 0.5 ? intervalFlag : 2,
+    slowFrameMs: Number.isFinite(slowFrameFlag) && slowFrameFlag >= 8 ? slowFrameFlag : 28,
+  };
+}
+
+function resetRenderDiagnosticsState(state: RenderDiagnosticsState): void {
+  state.frames = 0;
+  state.elapsedSec = 0;
+  state.sumFrameMs = 0;
+  state.maxFrameMs = 0;
+  state.slowFrames = 0;
+  state.stallsOver100Ms = 0;
+  state.maxCatchupSteps = 0;
 }
 
 function updateAiDebugLabels(
@@ -1010,6 +1053,17 @@ export function mountPixiScene(
   statusEl: HTMLElement,
   opts?: MountPixiSceneOpts,
 ): SceneHandle {
+  const renderDiagnosticsConfig = readRenderDiagnosticsConfig();
+  const renderDiagnostics: RenderDiagnosticsState = {
+    frames: 0,
+    elapsedSec: 0,
+    sumFrameMs: 0,
+    maxFrameMs: 0,
+    slowFrames: 0,
+    stallsOver100Ms: 0,
+    maxCatchupSteps: 0,
+  };
+
   const app = new Application();
   let cancelled = false;
   let sim = createSimulationAdapterForMode(opts?.authority ?? "local-client", {
@@ -1057,6 +1111,7 @@ export function mountPixiScene(
       centerCameraOnPlayer(game, camera);
       hudEl.textContent = "";
       statusEl.textContent = "";
+      resetRenderDiagnosticsState(renderDiagnostics);
     },
     centerOnPlayer: () => {
       followPlayer = true;
@@ -1080,6 +1135,13 @@ export function mountPixiScene(
   void app.init({ width: initialWidth, height: initialHeight, background: new Color("#0f2b39"), antialias: true }).then(() => {
     if (cancelled) return;
     host.appendChild(app.canvas);
+
+    const onVisibilityChange = () => {
+      if (!renderDiagnosticsConfig.enabled) return;
+      const state = document.hidden ? "hidden" : "visible";
+      console.info(`[render-debug] tab visibility changed: ${state}`);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const oceanGfx = new Graphics();
     const coastlinesGfx = new Graphics();
@@ -1171,17 +1233,33 @@ export function mountPixiScene(
         resizeObserver.disconnect();
         app.canvas.removeEventListener("wheel", onWheel);
         app.canvas.removeEventListener("pointerdown", onPointerDown);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         app.destroy(true, { children: true });
         return;
       }
 
-      const dtRender = Math.min(0.05, ticker.deltaMS / 1000);
+      const rawFrameMs = ticker.deltaMS;
+      const dtRender = Math.min(0.05, rawFrameMs / 1000);
       accumulator += dtRender;
 
+      if (renderDiagnosticsConfig.enabled) {
+        renderDiagnostics.frames += 1;
+        renderDiagnostics.elapsedSec += dtRender;
+        renderDiagnostics.sumFrameMs += rawFrameMs;
+        renderDiagnostics.maxFrameMs = Math.max(renderDiagnostics.maxFrameMs, rawFrameMs);
+        if (rawFrameMs >= renderDiagnosticsConfig.slowFrameMs) renderDiagnostics.slowFrames += 1;
+        if (rawFrameMs >= 100) renderDiagnostics.stallsOver100Ms += 1;
+      }
+
       sim.dispatch({ type: "set-input", input: controls.input });
+      let simCatchupSteps = 0;
       while (accumulator >= fixedDt) {
         sim.step(fixedDt);
         accumulator -= fixedDt;
+        simCatchupSteps += 1;
+      }
+      if (renderDiagnosticsConfig.enabled) {
+        renderDiagnostics.maxCatchupSteps = Math.max(renderDiagnostics.maxCatchupSteps, simCatchupSteps);
       }
 
       const game = sim.getSnapshot();
@@ -1325,6 +1403,28 @@ export function mountPixiScene(
         statusEl.innerHTML = buildVictorySummary(game.winner, game, matchStats);
       } else if (!game.winner) {
         statusEl.innerHTML = `<div class="status-hint">[I] Controls</div>`;
+      }
+
+      if (renderDiagnosticsConfig.enabled && renderDiagnostics.elapsedSec >= renderDiagnosticsConfig.intervalSec) {
+        const playerShip = game.ships.find((ship) => ship.team === "player");
+        const playerOnScreen = playerShip
+          ? (() => {
+              const p = toScreen(camera, playerShip.xFt, playerShip.yFt);
+              return p.x >= 0 && p.x <= camera.viewWidthPx && p.y >= 0 && p.y <= camera.viewHeightPx;
+            })()
+          : false;
+
+        const avgFrameMs = renderDiagnostics.sumFrameMs / Math.max(1, renderDiagnostics.frames);
+        const approxFps = 1000 / Math.max(1, avgFrameMs);
+        const enemyAfloat = game.ships.filter((ship) => ship.team === "enemy" && !ship.sunk).length;
+        console.info(
+          `[render-debug] fps=${approxFps.toFixed(1)} avg=${avgFrameMs.toFixed(2)}ms max=${renderDiagnostics.maxFrameMs.toFixed(2)}ms ` +
+          `slow>=${renderDiagnosticsConfig.slowFrameMs}ms:${renderDiagnostics.slowFrames}/${renderDiagnostics.frames} ` +
+          `stalls>=100ms:${renderDiagnostics.stallsOver100Ms} maxCatchup=${renderDiagnostics.maxCatchupSteps} ` +
+          `camera=(${camera.xFt.toFixed(0)},${camera.yFt.toFixed(0)}) zoom=${camera.zoom.toFixed(2)} ` +
+          `ships=${game.ships.length} enemyAfloat=${enemyAfloat} playerOnScreen=${playerOnScreen}`,
+        );
+        resetRenderDiagnosticsState(renderDiagnostics);
       }
     });
   });
